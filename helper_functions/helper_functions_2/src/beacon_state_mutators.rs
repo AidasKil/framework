@@ -69,9 +69,13 @@ pub fn slash_validator<C: Config>(
         Some(i) => i,
     };
     let whistleblower_reward = effective_balance / C::whistleblower_reward_quotient();
-    let proposer_reward = effective_balance / C::proposer_reward_quotient();
+    let proposer_reward = whistleblower_reward / C::proposer_reward_quotient();
     increase_balance(state, proposer_index, proposer_reward)?;
-    increase_balance(state, whistleblower_ind_val, whistleblower_reward)?;
+    increase_balance(
+        state,
+        whistleblower_ind_val,
+        whistleblower_reward - proposer_reward,
+    )?;
     Ok(())
 }
 
