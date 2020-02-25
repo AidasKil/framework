@@ -604,12 +604,12 @@ pub fn channel<C: Config>() -> (Sender<C>, Receiver<C>) {
 }
 
 pub fn run_network<C: Config, N: Networked<C>>(
-    config: NetworkConfig,
+    config: &NetworkConfig,
     networked: Qutex<N>,
     networked_receiver: Receiver<C>,
 ) -> Result<impl Future<Item = (), Error = Error>> {
     let logger = Logger::root(StdLog.fuse(), o!());
-    let service = Service::new(config, logger).map_err(SyncError::new)?;
+    let (_, service) = Service::new(config, logger).map_err(SyncError::new)?;
     Ok(EventHandler {
         networked,
         networked_receiver,

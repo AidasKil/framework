@@ -61,7 +61,7 @@ fn run_node<C: Config + DeserializeOwned>(config: RuntimeConfig) -> Result<()> {
     let qutex = Qutex::new(node);
 
     let (_, receiver) = eth2_network_libp2p::channel::<C>();
-    let run_network = eth2_network_libp2p::run_network(config.network, qutex.clone(), receiver)?;
+    let run_network = eth2_network_libp2p::run_network(&config.network, qutex.clone(), receiver)?;
 
     let handle_ticks = tick_stream.for_each(|tick| {
         qutex.clone().lock().from_err().and_then(move |mut node| {
