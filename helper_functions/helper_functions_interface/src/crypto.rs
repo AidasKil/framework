@@ -2,7 +2,7 @@ use bls::{AggregatePublicKey, PublicKey, PublicKeyBytes, Signature, SignatureByt
 use ring::digest::{digest, SHA256};
 use ssz_new::SszDecodeError;
 use std::convert::TryInto;
-use tree_hash::{SignedRoot, TreeHash};
+use tree_hash::TreeHash;
 use types::primitives::*;
 
 pub fn hash(input: &[u8]) -> Vec<u8> {
@@ -35,10 +35,4 @@ pub fn hash_tree_root<T: TreeHash>(object: &T) -> H256 {
         .try_into()
         .expect("Incorrect Tree Hash Root");
     H256::from_slice(hash)
-}
-
-pub fn signed_root<T: SignedRoot>(object: &T) -> H256 {
-    let hash_root = object.signed_root();
-    let hash: &[u8; 32] = hash_root[1..32].try_into().expect("Incorrect Signed Root");
-    H256::from(hash)
 }

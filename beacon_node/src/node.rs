@@ -11,14 +11,22 @@ use types::{
     beacon_state::BeaconState,
     config::Config,
     primitives::{Slot, H256},
-    types::{Attestation, BeaconBlock, Checkpoint},
+    types::{Attestation, Checkpoint, SignedBeaconBlock},
 };
 
 pub struct Node<C: Config>(Store<C>);
 
 impl<C: Config> Node<C> {
-    pub fn new(beacon_state: BeaconState<C>) -> Self {
-        Self(Store::new(beacon_state))
+    pub fn new(genesis_state: BeaconState<C>) -> Self {
+        // The way the genesis block is constructed makes it possible for many parties to
+        // independently produce the same block. But why does the genesis block have to
+        // exist at all? Perhaps the first block could be proposed by a validator as well
+        // (and not necessarily in slot 0)?
+        let mut genesis_block = SignedBeaconBlock::default();
+        // Note that `genesis_block.message.body.eth1_data` is not set to
+        // `genesis_state.latest_eth1_data`.
+        genesis_block.message.state_root = crypto::hash_tree_root(&genesis_state);
+        Self(Store::new(genesis_state, genesis_block))
     }
 
     pub fn head_state(&self) -> &BeaconState<C> {
@@ -36,7 +44,7 @@ impl<C: Config> Node<C> {
 }
 
 impl<C: Config> Networked<C> for Node<C> {
-    fn accept_beacon_block(&mut self, block: BeaconBlock<C>) -> Result<()> {
+    fn accept_beacon_block(&mut self, block: SignedBeaconBlock<C>) -> Result<()> {
         info!("received beacon block: {:?}", block);
         self.0.on_block(block)
     }
@@ -58,7 +66,7 @@ impl<C: Config> Networked<C> for Node<C> {
         }
     }
 
-    fn get_beacon_block(&self, root: H256) -> Option<&BeaconBlock<C>> {
+    fn get_beacon_block(&self, root: H256) -> Option<&SignedBeaconBlock<C>> {
         self.0.block(root)
     }
 }

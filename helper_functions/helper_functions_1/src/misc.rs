@@ -1,13 +1,14 @@
 use crate::{
-    crypto::hash,
+    crypto::{hash, hash_tree_root},
     math::{bytes_to_int, int_to_bytes},
 };
 use std::cmp::max;
 use std::convert::TryFrom;
 use std::convert::TryInto;
+use tree_hash::TreeHash;
 use typenum::marker_traits::Unsigned;
 use types::helper_functions_types::Error;
-use types::{beacon_state::BeaconState, config::Config, primitives::*};
+use types::{beacon_state::BeaconState, config::Config, primitives::*, types::SigningRoot};
 
 const MAX_RANDOM_BYTE: u64 = (1 << 8) - 1;
 
@@ -61,7 +62,7 @@ pub fn compute_start_slot_at_epoch<C: Config>(epoch: Epoch) -> Slot {
 }
 
 pub fn compute_activation_exit_epoch<C: Config>(epoch: Epoch) -> Epoch {
-    epoch + 1 + C::activation_exit_delay()
+    epoch + 1 + C::max_seed_lookahead()
 }
 
 pub fn compute_committee<'a, C: Config>(
@@ -141,7 +142,14 @@ pub fn compute_domain(domain_type: DomainType, fork_version: Option<&Version>) -
     let mut bytes = [0_u8; 8];
     (&mut bytes[0..4]).copy_from_slice(&domain_type.to_le_bytes()[0..4]);
     (&mut bytes[4..8]).copy_from_slice(version);
-    bytes_to_int(bytes)
+    bytes_to_int(bytes).into()
+}
+
+pub fn compute_signing_root<T: TreeHash>(object: &T, domain: Domain) -> H256 {
+    hash_tree_root(&SigningRoot {
+        object_root: hash_tree_root(object),
+        domain,
+    })
 }
 
 #[cfg(test)]

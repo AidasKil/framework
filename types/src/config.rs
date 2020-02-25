@@ -66,16 +66,6 @@ where
         + Debug
         + Send
         + Sync;
-    type MaxAttestationsPerEpoch: Unsigned
-        + Clone
-        + Copy
-        + PartialEq
-        + Eq
-        + Hash
-        + PartialOrd
-        + Ord
-        + Default
-        + Debug;
     type MaxDeposits: Unsigned
         + Clone
         + Copy
@@ -166,9 +156,17 @@ where
         + Default
         + Debug;
 
-    fn activation_exit_delay() -> u64 {
-        4
-    }
+    type MaxAttestationsPerEpoch: Unsigned
+        + Clone
+        + Copy
+        + PartialEq
+        + Eq
+        + Hash
+        + PartialOrd
+        + Ord
+        + Default
+        + Debug;
+
     fn base_reward_factor() -> u64 {
         64
     }
@@ -181,7 +179,7 @@ where
     fn domain_beacon_proposer() -> DomainType {
         0
     }
-    fn domain_attestation() -> DomainType {
+    fn domain_beacon_attester() -> DomainType {
         1
     }
     fn domain_randao() -> DomainType {
@@ -193,17 +191,17 @@ where
     fn domain_voluntary_exit() -> DomainType {
         4
     }
+    fn domain_selection_proof() -> DomainType {
+        5
+    }
+    fn domain_aggregate_and_proof() -> DomainType {
+        6
+    }
     fn effective_balance_increment() -> u64 {
         1_000_000_000
     }
     fn ejection_balance() -> u64 {
         16_000_000_000
-    }
-    fn genesis_epoch() -> u64 {
-        0
-    }
-    fn genesis_slot() -> u64 {
-        0
     }
     fn inactivity_penalty_quotient() -> u64 {
         2_u64.pow(25)
@@ -215,6 +213,9 @@ where
         32_000_000_000
     }
     fn max_epochs_per_crosslink() -> u64 {
+        4
+    }
+    fn max_seed_lookahead() -> u64 {
         4
     }
     fn min_attestation_inclusion_delay() -> u64 {
@@ -252,6 +253,9 @@ where
     fn proposer_reward_quotient() -> u64 {
         8
     }
+    fn safe_slots_to_update_justified() -> u64 {
+        8
+    }
     fn shuffle_round_count() -> u64 {
         10
     }
@@ -274,7 +278,6 @@ impl Config for MainnetConfig {
     type HistoricalRootsLimit = typenum::U16777216;
     type MaxAttesterSlashings = typenum::U1;
     type MaxAttestations = typenum::U128;
-    type MaxAttestationsPerEpoch = Prod<Self::MaxAttestations, Self::SlotsPerEpoch>;
     type MaxDeposits = typenum::U16;
     type MaxProposerSlashings = typenum::U16;
     type MaxValidatorsPerCommittee = typenum::U2048;
@@ -284,6 +287,8 @@ impl Config for MainnetConfig {
     type SlotsPerEth1VotingPeriod = typenum::U1024;
     type SlotsPerHistoricalRoot = typenum::U8192;
     type ValidatorRegistryLimit = typenum::U1099511627776;
+
+    type MaxAttestationsPerEpoch = Prod<Self::MaxAttestations, Self::SlotsPerEpoch>;
 }
 
 #[derive(
@@ -297,7 +302,6 @@ impl Config for MinimalConfig {
     type HistoricalRootsLimit = typenum::U16777216;
     type MaxAttesterSlashings = typenum::U1;
     type MaxAttestations = typenum::U128;
-    type MaxAttestationsPerEpoch = Prod<Self::MaxAttestations, Self::SlotsPerEpoch>;
     type MaxDeposits = typenum::U16;
     type MaxProposerSlashings = typenum::U16;
     type MaxValidatorsPerCommittee = typenum::U2048;
@@ -308,8 +312,13 @@ impl Config for MinimalConfig {
     type SlotsPerHistoricalRoot = typenum::U64;
     type ValidatorRegistryLimit = typenum::U1099511627776;
 
+    type MaxAttestationsPerEpoch = Prod<Self::MaxAttestations, Self::SlotsPerEpoch>;
+
     fn max_committees_per_slot() -> u64 {
         4
+    }
+    fn safe_slots_to_update_justified() -> u64 {
+        2
     }
     fn target_committee_size() -> u64 {
         4

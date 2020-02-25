@@ -172,7 +172,7 @@ pub fn get_beacon_committee<C: Config>(
     }
 
     let indices = get_active_validator_indices(state, epoch);
-    let seed = get_seed(state, epoch, C::domain_attestation());
+    let seed = get_seed(state, epoch, C::domain_beacon_attester());
     if seed.is_err() {
         return Err(seed.err().expect("Should be error"));
     }

@@ -18,7 +18,7 @@ mod spec_tests {
     use serde::de::DeserializeOwned;
     use ssz_new::{SszDecode, SszEncode};
     use test_generator::test_resources;
-    use tree_hash::{SignedRoot, TreeHash};
+    use tree_hash::TreeHash;
 
     use crate::config::{MainnetConfig, MinimalConfig};
 
@@ -27,13 +27,8 @@ mod spec_tests {
     }
 
     macro_rules! tests_for_type {
-        // It may be possible to eliminate the `$runner` parameter by using
-        // [autoref-based specialization], but that would take more effort than it's worth,
-        // especially since self-signed containers are no longer present in later versions.
-        //
-        // [autoref-based specialization]: <https://github.com/dtolnay/case-studies/tree/2d215ae2caca470bf92534b77eb63904a08a9be4/autoref-specialization>
         (
-            $runner: ident ::< $type: ident <_>>,
+            $type: ident $(<_ $bracket: tt)?,
             $mainnet_glob: literal,
             $minimal_glob: literal,
         ) => {
@@ -42,155 +37,156 @@ mod spec_tests {
 
                 #[test_resources($mainnet_glob)]
                 fn mainnet(case_directory: &str) {
-                    $runner::<tested_types::$type<MainnetConfig>>(case_directory);
+                    run_case::<tested_types::$type$(<MainnetConfig $bracket)?>(case_directory);
                 }
 
                 #[test_resources($minimal_glob)]
                 fn minimal(case_directory: &str) {
-                    $runner::<tested_types::$type<MinimalConfig>>(case_directory);
-                }
-            }
-        };
-        (
-            $runner: ident ::< $type: ident >,
-            $mainnet_glob: literal,
-            $minimal_glob: literal,
-        ) => {
-            mod $type {
-                use super::*;
-
-                #[test_resources($mainnet_glob)]
-                fn mainnet(case_directory: &str) {
-                    $runner::<tested_types::$type>(case_directory);
-                }
-
-                #[test_resources($minimal_glob)]
-                fn minimal(case_directory: &str) {
-                    $runner::<tested_types::$type>(case_directory);
+                    run_case::<tested_types::$type$(<MinimalConfig $bracket)?>(case_directory);
                 }
             }
         };
     }
 
-    // We do not generate tests for `AggregateAndProof` because this crate does not have that yet.
+    // We do not generate tests for `AggregateAndProof` and `Eth1Block`
+    // because this crate does not have those yet.
 
     tests_for_type! {
-        run_self_signed_case::<Attestation<_>>,
+        Attestation<_>,
         "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/Attestation/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/Attestation/*/*",
     }
 
     tests_for_type! {
-        run_case::<AttestationData>,
+        AttestationData,
         "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/AttestationData/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/AttestationData/*/*",
     }
 
     tests_for_type! {
-        run_case::<AttesterSlashing<_>>,
+        AttesterSlashing<_>,
         "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/AttesterSlashing/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/AttesterSlashing/*/*",
     }
 
     tests_for_type! {
-        run_self_signed_case::<BeaconBlock<_>>,
+        BeaconBlock<_>,
         "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/BeaconBlock/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/BeaconBlock/*/*",
     }
 
     tests_for_type! {
-        run_case::<BeaconBlockBody<_>>,
+        BeaconBlockBody<_>,
         "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/BeaconBlockBody/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/BeaconBlockBody/*/*",
     }
 
     tests_for_type! {
-        run_self_signed_case::<BeaconBlockHeader>,
+        BeaconBlockHeader,
         "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/BeaconBlockHeader/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/BeaconBlockHeader/*/*",
     }
 
     tests_for_type! {
-        run_case::<BeaconState<_>>,
+        BeaconState<_>,
         "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/BeaconState/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/BeaconState/*/*",
     }
 
     tests_for_type! {
-        run_case::<Checkpoint>,
+        Checkpoint,
         "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/Checkpoint/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/Checkpoint/*/*",
     }
 
     tests_for_type! {
-        run_case::<Deposit>,
+        Deposit,
         "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/Deposit/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/Deposit/*/*",
     }
 
     tests_for_type! {
-        run_self_signed_case::<DepositData>,
+        DepositData,
         "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/DepositData/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/DepositData/*/*",
     }
 
     tests_for_type! {
-        run_case::<Eth1Data>,
+        DepositMessage,
+        "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/DepositMessage/*/*",
+        "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/DepositMessage/*/*",
+    }
+
+    tests_for_type! {
+        Eth1Data,
         "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/Eth1Data/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/Eth1Data/*/*",
     }
 
     tests_for_type! {
-        run_case::<Fork>,
+        Fork,
         "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/Fork/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/Fork/*/*",
     }
 
     tests_for_type! {
-        run_case::<HistoricalBatch<_>>,
+        HistoricalBatch<_>,
         "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/HistoricalBatch/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/HistoricalBatch/*/*",
     }
 
     tests_for_type! {
-        run_self_signed_case::<IndexedAttestation<_>>,
+        IndexedAttestation<_>,
         "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/IndexedAttestation/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/IndexedAttestation/*/*",
     }
 
     tests_for_type! {
-        run_case::<PendingAttestation<_>>,
+        PendingAttestation<_>,
         "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/PendingAttestation/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/PendingAttestation/*/*",
     }
 
     tests_for_type! {
-        run_case::<ProposerSlashing>,
+        ProposerSlashing,
         "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/ProposerSlashing/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/ProposerSlashing/*/*",
     }
 
     tests_for_type! {
-        run_case::<Validator>,
+        SignedBeaconBlock<_>,
+        "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/SignedBeaconBlock/*/*",
+        "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/SignedBeaconBlock/*/*",
+    }
+
+    tests_for_type! {
+        SignedBeaconBlockHeader,
+        "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/SignedBeaconBlockHeader/*/*",
+        "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/SignedBeaconBlockHeader/*/*",
+    }
+
+    tests_for_type! {
+        SignedVoluntaryExit,
+        "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/SignedVoluntaryExit/*/*",
+        "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/SignedVoluntaryExit/*/*",
+    }
+
+    tests_for_type! {
+        SigningRoot,
+        "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/SigningRoot/*/*",
+        "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/SigningRoot/*/*",
+    }
+
+    tests_for_type! {
+        Validator,
         "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/Validator/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/Validator/*/*",
     }
 
     tests_for_type! {
-        run_self_signed_case::<VoluntaryExit>,
+        VoluntaryExit,
         "eth2.0-spec-tests/tests/mainnet/phase0/ssz_static/VoluntaryExit/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/VoluntaryExit/*/*",
-    }
-
-    fn run_self_signed_case<D>(case_directory: &str)
-    where
-        D: PartialEq + Debug + DeserializeOwned + SszDecode + SszEncode + TreeHash + SignedRoot,
-    {
-        let signing_root = spec_test_utils::signing_root(case_directory);
-
-        let yaml_value = run_case::<D>(case_directory);
-
-        assert_eq!(yaml_value.signed_root(), signing_root.as_bytes());
     }
 
     fn run_case<D>(case_directory: &str) -> D

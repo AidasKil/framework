@@ -4,6 +4,7 @@ use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, Serializer};
 use serde_hex::{encode as hex_encode, PrefixedHexVisitor};
 use ssz::{SszDecode, SszDecodeError, SszEncode};
+use std::default;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
@@ -16,15 +17,15 @@ pub struct PublicKey(RawPublicKey);
 
 impl PublicKey {
     pub fn from_secret_key(secret_key: &SecretKey) -> Self {
-        Self(RawPublicKey::from_secret_key(secret_key.as_raw()))
+        PublicKey(RawPublicKey::from_secret_key(secret_key.as_raw()))
     }
 
-    pub const fn from_raw(raw: RawPublicKey) -> Self {
+    pub fn from_raw(raw: RawPublicKey) -> Self {
         Self(raw)
     }
 
     /// Returns the underlying signature.
-    pub const fn as_raw(&self) -> &RawPublicKey {
+    pub fn as_raw(&self) -> &RawPublicKey {
         &self.0
     }
 
@@ -37,11 +38,11 @@ impl PublicKey {
 
     /// Converts compressed bytes to PublicKey
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, SszDecodeError> {
-        let pubkey = RawPublicKey::from_bytes(bytes).map_err(|_| {
+        let pubkey = RawPublicKey::from_bytes(&bytes).map_err(|_| {
             SszDecodeError::BytesInvalid(format!("Invalid PublicKey bytes: {:?}", bytes))
         })?;
 
-        Ok(Self(pubkey))
+        Ok(PublicKey(pubkey))
     }
 
     /// Returns the PublicKey as (x, y) bytes
@@ -51,10 +52,10 @@ impl PublicKey {
 
     /// Converts (x, y) bytes to PublicKey
     pub fn from_uncompressed_bytes(bytes: &[u8]) -> Result<Self, SszDecodeError> {
-        let pubkey = RawPublicKey::from_uncompressed_bytes(bytes).map_err(|_| {
+        let pubkey = RawPublicKey::from_uncompressed_bytes(&bytes).map_err(|_| {
             SszDecodeError::BytesInvalid("Invalid PublicKey uncompressed bytes.".to_string())
         })?;
-        Ok(Self(pubkey))
+        Ok(PublicKey(pubkey))
     }
 
     /// Returns the last 6 bytes of the SSZ encoding of the public key, as a hex string.
@@ -84,10 +85,10 @@ impl fmt::Debug for PublicKey {
     }
 }
 
-impl Default for PublicKey {
+impl default::Default for PublicKey {
     fn default() -> Self {
         let secret_key = SecretKey::random();
-        Self::from_secret_key(&secret_key)
+        PublicKey::from_secret_key(&secret_key)
     }
 }
 
@@ -117,7 +118,7 @@ impl<'de> Deserialize<'de> for PublicKey {
 }
 
 impl PartialEq for PublicKey {
-    fn eq(&self, other: &Self) -> bool {
+    fn eq(&self, other: &PublicKey) -> bool {
         self.as_ssz_bytes() == other.as_ssz_bytes()
     }
 }
@@ -145,7 +146,7 @@ mod tests {
         let original = PublicKey::from_secret_key(&sk);
 
         let bytes = ssz_encode(&original);
-        let decoded = PublicKey::from_ssz_bytes(&bytes).expect("Test");
+        let decoded = PublicKey::from_ssz_bytes(&bytes).unwrap();
 
         assert_eq!(original, decoded);
     }

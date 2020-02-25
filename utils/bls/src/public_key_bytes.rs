@@ -23,10 +23,10 @@ mod tests {
         let keypair = Keypair::random();
 
         let bytes = ssz_encode(&keypair.pk);
-        let public_key_bytes = PublicKeyBytes::from_bytes(&bytes).expect("Test");
+        let public_key_bytes = PublicKeyBytes::from_bytes(&bytes).unwrap();
         let public_key: Result<PublicKey, _> = (&public_key_bytes).try_into();
         assert!(public_key.is_ok());
-        assert_eq!(keypair.pk, public_key.expect("Test"));
+        assert_eq!(keypair.pk, public_key.unwrap());
     }
 
     #[test]
@@ -37,7 +37,7 @@ mod tests {
         let public_key_bytes = PublicKeyBytes::from_bytes(&public_key_bytes[..]);
         assert!(public_key_bytes.is_ok());
 
-        let public_key: Result<PublicKey, _> = public_key_bytes.as_ref().expect("Test").try_into();
+        let public_key: Result<PublicKey, _> = public_key_bytes.as_ref().unwrap().try_into();
         assert!(public_key.is_err());
     }
 }

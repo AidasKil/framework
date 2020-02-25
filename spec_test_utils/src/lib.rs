@@ -29,7 +29,6 @@ struct BlocksMeta {
 #[derive(Deserialize)]
 struct Roots {
     root: H256,
-    signing_root: Option<H256>,
 }
 
 pub fn bls_setting(case_directory: impl AsRef<Path>) -> Option<bool> {
@@ -87,18 +86,9 @@ pub fn value<D: DeserializeOwned>(case_directory: impl AsRef<Path>) -> D {
 }
 
 pub fn hash_tree_root(case_directory: impl AsRef<Path>) -> H256 {
-    roots(case_directory).root
-}
-
-pub fn signing_root(case_directory: impl AsRef<Path>) -> H256 {
-    roots(case_directory)
-        .signing_root
-        .expect("every SSZ test for a self-signed container should specify the signing root")
-}
-
-fn roots(case_directory: impl AsRef<Path>) -> Roots {
-    yaml(resolve(case_directory).join("roots.yaml"))
-        .expect("every SSZ test should specify the root(s) of the value")
+    let Roots { root } = yaml(resolve(case_directory).join("roots.yaml"))
+        .expect("every SSZ test should specify the root of the value");
+    root
 }
 
 fn resolve(case_directory_relative_to_repository_root: impl AsRef<Path>) -> PathBuf {

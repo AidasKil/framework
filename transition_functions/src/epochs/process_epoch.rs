@@ -4,7 +4,7 @@ use helper_functions::beacon_state_accessors::*;
 use helper_functions::{
     beacon_state_accessors::{get_randao_mix, get_total_active_balance, get_validator_churn_limit},
     beacon_state_mutators::*,
-    crypto::{bls_verify, hash, hash_tree_root, signed_root},
+    crypto::{bls_verify, hash, hash_tree_root},
     misc::compute_activation_exit_epoch,
     predicates::is_active_validator,
 };
@@ -33,7 +33,7 @@ pub fn process_epoch<T: Config>(state: &mut BeaconState<T>) {
 fn process_justification_and_finalization<T: Config>(
     state: &mut BeaconState<T>,
 ) -> Result<(), Error> {
-    if get_current_epoch(state) <= T::genesis_epoch() + 1 {
+    if get_current_epoch(state) <= GENESIS_EPOCH + 1 {
         return Ok(());
     }
 
@@ -157,7 +157,7 @@ fn process_registry_updates<T: Config>(state: &mut BeaconState<T>) {
 }
 
 fn process_rewards_and_penalties<T: Config>(state: &mut BeaconState<T>) -> Result<(), Error> {
-    if get_current_epoch(state) == T::genesis_epoch() {
+    if get_current_epoch(state) == GENESIS_EPOCH {
         return Ok(());
     }
 

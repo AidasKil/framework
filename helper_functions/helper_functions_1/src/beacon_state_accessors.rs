@@ -5,7 +5,9 @@ use std::collections::BTreeSet;
 use std::convert::TryFrom;
 use typenum::marker_traits::Unsigned;
 use types::helper_functions_types::Error;
-use types::{beacon_state::BeaconState, config::Config, primitives::*, types::*};
+use types::{
+    beacon_state::BeaconState, config::Config, consts::GENESIS_EPOCH, primitives::*, types::*,
+};
 
 use crate::{
     crypto::hash,
@@ -20,12 +22,11 @@ pub fn get_current_epoch<C: Config>(state: &BeaconState<C>) -> Epoch {
 
 pub fn get_previous_epoch<C: Config>(state: &BeaconState<C>) -> Epoch {
     let current_epoch = get_current_epoch(state);
-    let genesis_epoch = C::genesis_epoch();
 
-    if current_epoch > genesis_epoch {
+    if current_epoch > GENESIS_EPOCH {
         current_epoch - 1
     } else {
-        genesis_epoch
+        GENESIS_EPOCH
     }
 }
 
@@ -146,7 +147,7 @@ pub fn get_beacon_committee<C: Config>(
     let committees_per_slot = get_committee_count_at_slot(state, slot)?;
     compute_committee::<C>(
         &get_active_validator_indices(state, epoch),
-        &(get_seed(state, epoch, C::domain_attestation())?),
+        &(get_seed(state, epoch, C::domain_beacon_attester())?),
         (slot % C::SlotsPerEpoch::to_u64()) * committees_per_slot + index,
         committees_per_slot * C::SlotsPerEpoch::to_u64(),
     )

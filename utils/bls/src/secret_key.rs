@@ -17,7 +17,7 @@ pub struct SecretKey(RawSecretKey);
 
 impl SecretKey {
     pub fn random() -> Self {
-        Self(RawSecretKey::random(&mut rand::thread_rng()))
+        SecretKey(RawSecretKey::random(&mut rand::thread_rng()))
     }
 
     pub fn from_raw(raw: RawSecretKey) -> Self {
@@ -32,8 +32,8 @@ impl SecretKey {
     /// Instantiate a SecretKey from existing bytes.
     ///
     /// Note: this is _not_ SSZ decoding.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, SszDecodeError> {
-        Ok(Self(RawSecretKey::from_bytes(bytes).map_err(|e| {
+    pub fn from_bytes(bytes: &[u8]) -> Result<SecretKey, SszDecodeError> {
+        Ok(SecretKey(RawSecretKey::from_bytes(bytes).map_err(|e| {
             SszDecodeError::BytesInvalid(format!(
                 "Invalid SecretKey bytes: {:?} Error: {:?}",
                 bytes, e
@@ -42,7 +42,7 @@ impl SecretKey {
     }
 
     /// Returns the underlying secret key.
-    pub const fn as_raw(&self) -> &RawSecretKey {
+    pub fn as_raw(&self) -> &RawSecretKey {
         &self.0
     }
 }
@@ -66,7 +66,7 @@ impl<'de> Deserialize<'de> for SecretKey {
         D: Deserializer<'de>,
     {
         let bytes = deserializer.deserialize_str(PrefixedHexVisitor)?;
-        let secret_key = Self::from_ssz_bytes(&bytes[..])
+        let secret_key = SecretKey::from_ssz_bytes(&bytes[..])
             .map_err(|e| serde::de::Error::custom(format!("invalid ssz ({:?})", e)))?;
         Ok(secret_key)
     }
@@ -79,11 +79,11 @@ mod tests {
 
     #[test]
     pub fn test_ssz_round_trip() {
-        let original = SecretKey::from_bytes(b"jzjxxgjajfjrmgodszzsgqccmhnyvetcuxobhtynojtpdtbj")
-            .expect("Test");
+        let original =
+            SecretKey::from_bytes(b"jzjxxgjajfjrmgodszzsgqccmhnyvetcuxobhtynojtpdtbj").unwrap();
 
         let bytes = ssz_encode(&original);
-        let decoded = SecretKey::from_ssz_bytes(&bytes).expect("Test");
+        let decoded = SecretKey::from_ssz_bytes(&bytes).unwrap();
 
         assert_eq!(original, decoded);
     }

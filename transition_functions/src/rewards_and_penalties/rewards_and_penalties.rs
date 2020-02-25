@@ -117,7 +117,7 @@ where
     }
 
     fn process_rewards_and_penalties(&mut self) {
-        if get_current_epoch(&self) == T::genesis_epoch() {
+        if get_current_epoch(&self) == GENESIS_EPOCH {
             return;
         }
         let (rewards, penalties) = self.get_attestation_deltas();

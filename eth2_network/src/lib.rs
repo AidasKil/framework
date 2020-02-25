@@ -13,7 +13,7 @@ use anyhow::Result;
 use types::{
     config::Config,
     primitives::{Epoch, Slot, Version, H256},
-    types::{Attestation, BeaconBlock},
+    types::{Attestation, SignedBeaconBlock},
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -26,17 +26,17 @@ pub struct Status {
 }
 
 pub trait Network<C: Config> {
-    fn publish_beacon_block(&self, beacon_block: BeaconBlock<C>) -> Result<()>;
+    fn publish_beacon_block(&self, beacon_block: SignedBeaconBlock<C>) -> Result<()>;
 
     fn publish_beacon_attestation(&self, attestation: Attestation<C>) -> Result<()>;
 }
 
 pub trait Networked<C: Config>: 'static {
-    fn accept_beacon_block(&mut self, beacon_block: BeaconBlock<C>) -> Result<()>;
+    fn accept_beacon_block(&mut self, beacon_block: SignedBeaconBlock<C>) -> Result<()>;
 
     fn accept_beacon_attestation(&mut self, attestation: Attestation<C>) -> Result<()>;
 
     fn get_status(&self) -> Status;
 
-    fn get_beacon_block(&self, root: H256) -> Option<&BeaconBlock<C>>;
+    fn get_beacon_block(&self, root: H256) -> Option<&SignedBeaconBlock<C>>;
 }

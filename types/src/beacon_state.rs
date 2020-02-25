@@ -58,6 +58,7 @@ impl From<HelperError> for Error {
     Debug, PartialEq, Clone, Serialize, Deserialize, SszDecode, SszEncode, TreeHash, Default,
 )]
 pub struct BeaconState<C: Config> {
+    // Versioning
     pub genesis_time: u64,
     pub slot: Slot,
     pub fork: Fork,
@@ -68,7 +69,7 @@ pub struct BeaconState<C: Config> {
     pub state_roots: FixedVector<H256, C::SlotsPerHistoricalRoot>,
     pub historical_roots: VariableList<H256, C::HistoricalRootsLimit>,
 
-    // Eth1 Data
+    // Eth1
     pub eth1_data: Eth1Data,
     pub eth1_data_votes: VariableList<Eth1Data, C::SlotsPerEth1VotingPeriod>,
     pub eth1_deposit_index: u64,
@@ -77,7 +78,7 @@ pub struct BeaconState<C: Config> {
     pub validators: VariableList<Validator, C::ValidatorRegistryLimit>,
     pub balances: VariableList<u64, C::ValidatorRegistryLimit>,
 
-    // Shuffling
+    // Randomness
     pub randao_mixes: FixedVector<H256, C::EpochsPerHistoricalVector>,
 
     // Slashings

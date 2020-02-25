@@ -5,7 +5,7 @@ use bls::{
 use ring::digest::{digest, SHA256};
 use ssz_new::SszDecodeError;
 use std::convert::TryInto;
-use tree_hash::{SignedRoot, TreeHash};
+use tree_hash::TreeHash;
 use types::primitives::H256;
 
 pub fn hash(input: &[u8]) -> Vec<u8> {
@@ -16,19 +16,17 @@ pub fn bls_verify(
     pubkey: &PublicKeyBytes,
     message: &[u8],
     signature: &SignatureBytes,
-    domain: u64,
 ) -> Result<bool, SszDecodeError> {
     let pk: PublicKey = pubkey.try_into()?;
     let sg: Signature = signature.try_into()?;
 
-    Ok(sg.verify(message, domain, &pk))
+    Ok(sg.verify(message, &pk))
 }
 
 pub fn bls_verify_multiple(
     pubkeys: &[&PublicKeyBytes],
     messages: &[&[u8]],
     signature: &SignatureBytes,
-    domain: u64,
 ) -> Result<bool, SszDecodeError> {
     let sg = AggregateSignature::from_bytes(signature.as_bytes().as_slice())?;
 
@@ -38,7 +36,7 @@ pub fn bls_verify_multiple(
         apk.add(&pk);
     }
 
-    Ok(sg.verify_multiple(messages, domain, &[&apk]))
+    Ok(sg.verify_multiple(messages, &[&apk]))
 }
 
 pub fn bls_aggregate_pubkeys(pubkeys: &[PublicKey]) -> AggregatePublicKey {
@@ -51,11 +49,6 @@ pub fn bls_aggregate_pubkeys(pubkeys: &[PublicKey]) -> AggregatePublicKey {
 
 pub fn hash_tree_root<T: TreeHash>(object: &T) -> H256 {
     let hash = object.tree_hash_root();
-    H256::from_slice(hash.as_slice())
-}
-
-pub fn signed_root<T: SignedRoot>(object: &T) -> H256 {
-    let hash = object.signed_root();
     H256::from_slice(hash.as_slice())
 }
 
@@ -230,14 +223,6 @@ mod tests {
         let obj = AttestationData::default();
         let hash: H256 = H256::from_slice(obj.tree_hash_root().as_slice());
         let hash2 = hash_tree_root(&obj);
-        assert_eq!(hash, hash2);
-    }
-
-    #[test]
-    fn test_signing_root() {
-        let obj = AttestationData::default();
-        let hash: H256 = H256::from_slice(obj.signed_root().as_slice());
-        let hash2 = signed_root(&obj);
         assert_eq!(hash, hash2);
     }
 }

@@ -1,4 +1,4 @@
-use crate::{beacon_state_accessors as accessors, crypto};
+use crate::{beacon_state_accessors as accessors, crypto, misc};
 use bls::AggregatePublicKey;
 use itertools::Itertools;
 use ssz_types::VariableList;
@@ -78,19 +78,15 @@ pub fn validate_indexed_attestation<C: Config>(
 
     let aggr_pubkey = aggregate_validator_public_keys(indices, state)?;
 
-    let hash = indexed_attestation.data.tree_hash_root();
+    let domain = accessors::get_domain(
+        state,
+        C::domain_beacon_attester(),
+        Some(indexed_attestation.data.target.epoch),
+    );
 
-    if verify_signature
-        && !signature.verify_multiple(
-            &[hash.as_slice()],
-            accessors::get_domain(
-                state,
-                C::domain_attestation(),
-                Some(indexed_attestation.data.target.epoch),
-            ),
-            &[&aggr_pubkey],
-        )
-    {
+    let signing_root = misc::compute_signing_root(&indexed_attestation.data, domain);
+
+    if verify_signature && !signature.verify(signing_root.as_bytes(), &aggr_pubkey) {
         return Err(Error::InvalidSignature);
     }
 
@@ -530,7 +526,7 @@ mod tests {
                 digest1.as_slice(),
                 accessors::get_domain(
                     &state,
-                    MainnetConfig::domain_attestation(),
+                    MainnetConfig::domain_beacon_attester(),
                     Some(attestation.data.target.epoch),
                 ),
                 &skey1,
@@ -539,7 +535,7 @@ mod tests {
                 digest1.as_slice(),
                 accessors::get_domain(
                     &state,
-                    MainnetConfig::domain_attestation(),
+                    MainnetConfig::domain_beacon_attester(),
                     Some(attestation.data.target.epoch),
                 ),
                 &skey2,
@@ -558,7 +554,7 @@ mod tests {
                 &digest1,
                 accessors::get_domain(
                     &state,
-                    MainnetConfig::domain_attestation(),
+                    MainnetConfig::domain_beacon_attester(),
                     Some(attestation.data.target.epoch)
                 ),
                 &aggr_pubkey,

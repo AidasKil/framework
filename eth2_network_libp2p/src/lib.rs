@@ -26,7 +26,7 @@ use thiserror::Error;
 use types::{
     config::Config,
     primitives::Version,
-    types::{Attestation, BeaconBlock},
+    types::{Attestation, SignedBeaconBlock},
 };
 
 pub use eth2_libp2p::NetworkConfig;
@@ -94,7 +94,7 @@ enum EventHandlerError {
 
 #[allow(clippy::large_enum_variant)]
 enum Gossip<C: Config> {
-    BeaconBlock(BeaconBlock<C>),
+    BeaconBlock(SignedBeaconBlock<C>),
     BeaconAttestation(Attestation<C>),
 }
 
@@ -105,7 +105,7 @@ pub struct Sender<C: Config>(UnboundedSender<Gossip<C>>);
 pub struct Receiver<C: Config>(UnboundedReceiver<Gossip<C>>);
 
 impl<C: Config> Network<C> for Sender<C> {
-    fn publish_beacon_block(&self, beacon_block: BeaconBlock<C>) -> Result<()> {
+    fn publish_beacon_block(&self, beacon_block: SignedBeaconBlock<C>) -> Result<()> {
         self.0
             .unbounded_send(Gossip::BeaconBlock(beacon_block))
             .map_err(Into::into)
@@ -277,12 +277,12 @@ impl<C: Config, N: Networked<C>> EventHandler<C, N> {
                     //
                     // [specification]: https://github.com/ethereum/eth2.0-specs/blob/19fa53709a247df5279f063179cc5e317ad57041/specs/networking/p2p-interface.md
                     // [introduced]:    https://github.com/ethereum/eth2.0-specs/pull/1404
-                    iter::successors(networked.get_beacon_block(head_block_root), |previous| {
-                        networked.get_beacon_block(previous.parent_root)
+                    iter::successors(networked.get_beacon_block(head_block_root), |block| {
+                        networked.get_beacon_block(block.message.parent_root)
                     })
-                    .skip_while(|block| end_slot < block.slot)
-                    .take_while(|block| start_slot <= block.slot)
-                    .filter(|block| (block.slot - start_slot) % step == 0)
+                    .skip_while(|block| end_slot < block.message.slot)
+                    .take_while(|block| start_slot <= block.message.slot)
+                    .filter(|block| (block.message.slot - start_slot) % step == 0)
                     .for_each(|block| {
                         info!(
                             "sending BlocksByRange response chunk (peer_id: {}, block: {:?})",
@@ -404,8 +404,8 @@ impl<C: Config, N: Networked<C>> EventHandler<C, N> {
                     Hs(bytes.as_slice()),
                 );
 
-                let beacon_block =
-                    BeaconBlock::from_ssz_bytes(bytes.as_slice()).map_err(DebugAsError::new)?;
+                let beacon_block = SignedBeaconBlock::from_ssz_bytes(bytes.as_slice())
+                    .map_err(DebugAsError::new)?;
 
                 info!(
                     "decoded BlocksByRange response chunk (peer_id: {}, beacon_block: {:?})",
@@ -484,8 +484,8 @@ impl<C: Config, N: Networked<C>> EventHandler<C, N> {
             PubsubMessage::Block(bytes) => {
                 info!("received beacon block as gossip: {}", Hs(bytes.as_slice()));
 
-                let beacon_block =
-                    BeaconBlock::from_ssz_bytes(bytes.as_slice()).map_err(DebugAsError::new)?;
+                let beacon_block = SignedBeaconBlock::from_ssz_bytes(bytes.as_slice())
+                    .map_err(DebugAsError::new)?;
 
                 info!("decoded gossiped beacon block: {:?}", beacon_block);
 

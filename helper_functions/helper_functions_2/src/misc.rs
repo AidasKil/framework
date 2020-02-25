@@ -1,14 +1,16 @@
-use crate::crypto::hash;
+use crate::crypto::{hash, hash_tree_root};
 use crate::math::bytes_to_int;
 use crate::math::int_to_bytes;
 
 use std::convert::TryFrom;
 use std::convert::TryInto;
+use tree_hash::TreeHash;
 use typenum::marker_traits::Unsigned;
 use types::beacon_state::BeaconState;
 use types::config::Config;
 use types::helper_functions_types::Error;
 use types::primitives::{Domain, DomainType, Epoch, Slot, ValidatorIndex, Version, H256};
+use types::types::SigningRoot;
 
 pub fn compute_epoch_at_slot<C: Config>(slot: Slot) -> Epoch {
     slot / C::SlotsPerEpoch::to_u64()
@@ -19,7 +21,7 @@ pub fn compute_start_slot_at_epoch<C: Config>(epoch: Epoch) -> Slot {
 }
 
 pub fn compute_activation_exit_epoch<C: Config>(epoch: Epoch) -> Epoch {
-    epoch + 1 + C::min_seed_lookahead()
+    epoch + 1 + C::max_seed_lookahead()
 }
 
 pub fn compute_domain(domain_type: DomainType, fork_version: Option<&Version>) -> Domain {
@@ -31,7 +33,14 @@ pub fn compute_domain(domain_type: DomainType, fork_version: Option<&Version>) -
             domain_bytes[i + 4] = f[i];
         }
     }
-    bytes_to_int(&domain_bytes).expect("")
+    bytes_to_int(&domain_bytes).expect("").into()
+}
+
+pub fn compute_signing_root<T: TreeHash>(object: &T, domain: Domain) -> H256 {
+    hash_tree_root(&SigningRoot {
+        object_root: hash_tree_root(object),
+        domain,
+    })
 }
 
 pub fn compute_shuffled_index<C: Config>(

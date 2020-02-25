@@ -1,24 +1,25 @@
 //! Based on the naive LMD-GHOST fork choice rule implementation in the specification:
-//! <https://github.com/ethereum/eth2.0-specs/blob/65b615a4d4cf75a50b29d25c53f1bc5422770ae5/specs/core/0_fork-choice.md>
+//! <https://github.com/ethereum/eth2.0-specs/blob/8201fb00249782528342a51434f6abcfc57b501f/specs/phase0/fork-choice.md>
 //!
 //! `assert`s from Python are represented by statements that either delay the processing of the
 //! offending object or return `Err`. All other operations that can raise exceptions in Python
 //! (like indexing into `dict`s) are represented by statements that panic on failure.
 
-use core::{cmp::Ordering, convert::TryInto as _, mem};
+use core::{convert::TryInto as _, mem};
 use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{ensure, Result};
 use error_utils::DebugAsError;
 use helper_functions::{beacon_state_accessors, crypto, misc, predicates};
 use log::info;
-use maplit::hashmap;
+use maplit::{btreemap, hashmap};
 use thiserror::Error;
 use transition_functions::process_slot;
 use types::{
     config::Config,
+    consts::GENESIS_EPOCH,
     primitives::{Epoch, Gwei, Slot, ValidatorIndex, H256},
-    types::{Attestation, BeaconBlock, Checkpoint},
+    types::{Attestation, BeaconBlock, Checkpoint, SignedBeaconBlock},
     BeaconState,
 };
 
@@ -28,30 +29,43 @@ enum Error<C: Config> {
     #[error("slot {new_slot} is not later than {old_slot}")]
     SlotNotLater { old_slot: Slot, new_slot: Slot },
     #[error("block is not a descendant of finalized block (block: {block:?}, finalized_block: {finalized_block:?})")]
-    NotDescendantOfFinalized {
-        block: BeaconBlock<C>,
-        finalized_block: BeaconBlock<C>,
+    BlockNotDescendantOfFinalized {
+        block: SignedBeaconBlock<C>,
+        finalized_block: SignedBeaconBlock<C>,
+    },
+    #[error(
+        "attestation votes for a checkpoint in the wrong epoch (attestation: {attestation:?})"
+    )]
+    AttestationTargetsWrongEpoch { attestation: Attestation<C> },
+    #[error("attestation votes for a block from the future (attestation: {attestation:?}, block: {block:?})")]
+    AttestationForFutureBlock {
+        attestation: Attestation<C>,
+        block: SignedBeaconBlock<C>,
     },
 }
 
-/// <https://github.com/ethereum/eth2.0-specs/blob/65b615a4d4cf75a50b29d25c53f1bc5422770ae5/specs/core/0_fork-choice.md#latestmessage>
+/// <https://github.com/ethereum/eth2.0-specs/blob/8201fb00249782528342a51434f6abcfc57b501f/specs/phase0/fork-choice.md#latestmessage>
 type LatestMessage = Checkpoint;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum DelayedObject<C: Config> {
-    BeaconBlock(BeaconBlock<C>),
+    Block(SignedBeaconBlock<C>),
     Attestation(Attestation<C>),
 }
 
-/// <https://github.com/ethereum/eth2.0-specs/blob/65b615a4d4cf75a50b29d25c53f1bc5422770ae5/specs/core/0_fork-choice.md#store>
+/// <https://github.com/ethereum/eth2.0-specs/blob/8201fb00249782528342a51434f6abcfc57b501f/specs/phase0/fork-choice.md#store>
 pub struct Store<C: Config> {
     slot: Slot,
     justified_checkpoint: Checkpoint,
     finalized_checkpoint: Checkpoint,
+    best_justified_checkpoint: Checkpoint,
+    // We store `SignedBeaconBlock`s instead of `BeaconBlockHeader`s because we need to return them
+    // to the network stack in response to queries. Also, signatures may be required in the future
+    // to implement slashing.
+    blocks: HashMap<H256, SignedBeaconBlock<C>>,
     // `blocks` and `block_states` could be combined into a single map.
     // We've left them separate to match the specification more closely.
-    blocks: HashMap<H256, BeaconBlock<C>>,
     block_states: HashMap<H256, BeaconState<C>>,
     checkpoint_states: HashMap<Checkpoint, BeaconState<C>>,
     latest_messages: HashMap<ValidatorIndex, LatestMessage>,
@@ -62,67 +76,36 @@ pub struct Store<C: Config> {
 }
 
 impl<C: Config> Store<C> {
-    /// <https://github.com/ethereum/eth2.0-specs/blob/65b615a4d4cf75a50b29d25c53f1bc5422770ae5/specs/core/0_fork-choice.md#get_genesis_store>
-    pub fn new(genesis_state: BeaconState<C>) -> Self {
-        // The way the genesis block is constructed makes it possible for many parties to
-        // independently produce the same block. But why does the genesis block have to
-        // exist at all? Perhaps the first block could be proposed by a validator as well
-        // (and not necessarily in slot 0)?
-        let genesis_block = BeaconBlock {
-            // Note that:
-            // - `BeaconBlock.body.eth1_data` is not set to `state.latest_eth1_data`.
-            // - `BeaconBlock.slot` is set to 0 even if `C::genesis_slot()` is not 0.
-            state_root: crypto::hash_tree_root(&genesis_state),
-            ..BeaconBlock::default()
-        };
-
-        let epoch = C::genesis_epoch();
-        let root = crypto::signed_root(&genesis_block);
+    /// <https://github.com/ethereum/eth2.0-specs/blob/8201fb00249782528342a51434f6abcfc57b501f/specs/phase0/fork-choice.md#get_forkchoice_store>
+    pub fn new(anchor_state: BeaconState<C>, anchor_block: SignedBeaconBlock<C>) -> Self {
+        let epoch = beacon_state_accessors::get_current_epoch(&anchor_state);
+        let root = crypto::hash_tree_root(&anchor_block.message);
         let checkpoint = Checkpoint { epoch, root };
 
         Self {
-            slot: genesis_state.slot,
+            slot: anchor_state.slot,
             justified_checkpoint: checkpoint,
             finalized_checkpoint: checkpoint,
-            blocks: hashmap! {root => genesis_block},
-            block_states: hashmap! {root => genesis_state.clone()},
-            checkpoint_states: hashmap! {checkpoint => genesis_state},
+            best_justified_checkpoint: checkpoint,
+            blocks: hashmap! {root => anchor_block},
+            block_states: hashmap! {root => anchor_state.clone()},
+            checkpoint_states: hashmap! {checkpoint => anchor_state},
             latest_messages: hashmap! {},
 
-            delayed_until_slot: BTreeMap::new(),
-            delayed_until_block: HashMap::new(),
+            delayed_until_slot: btreemap! {},
+            delayed_until_block: hashmap! {},
         }
     }
 
-    /// <https://github.com/ethereum/eth2.0-specs/blob/65b615a4d4cf75a50b29d25c53f1bc5422770ae5/specs/core/0_fork-choice.md#get_head>
-    ///
-    /// Unlike the `get_head` function in the specification, this returns the [`BeaconState`]
-    /// produced after processing the current head block.
     pub fn head_state(&self) -> &BeaconState<C> {
-        let mut current_root = self.justified_checkpoint.root;
-
-        let justified_slot = Self::epoch_start_slot(self.justified_checkpoint.epoch);
-
-        let head_root = loop {
-            let mut child_with_plurality = None;
-
-            for (&root, block) in &self.blocks {
-                if block.parent_root == current_root && justified_slot < block.slot {
-                    let balance = self.latest_attesting_balance(root, block);
-                    child_with_plurality = Some((balance, root)).max(child_with_plurality);
-                }
-            }
-
-            match child_with_plurality {
-                Some((_, root)) => current_root = root,
-                None => break current_root,
-            }
-        };
-
-        &self.block_states[&head_root]
+        &self.block_states[&self.head()]
     }
 
-    /// <https://github.com/ethereum/eth2.0-specs/blob/65b615a4d4cf75a50b29d25c53f1bc5422770ae5/specs/core/0_fork-choice.md#on_tick>
+    pub fn block(&self, root: H256) -> Option<&SignedBeaconBlock<C>> {
+        self.blocks.get(&root)
+    }
+
+    /// <https://github.com/ethereum/eth2.0-specs/blob/8201fb00249782528342a51434f6abcfc57b501f/specs/phase0/fork-choice.md#on_tick>
     ///
     /// Unlike `on_tick` in the specification, this should be called at the start of a slot instead
     /// of every second. The fork choice rule doesn't need a precise timestamp.
@@ -134,17 +117,26 @@ impl<C: Config> Store<C> {
                 new_slot: slot
             },
         );
+
+        // > update store time
         self.slot = slot;
+
+        // > Not a new epoch, return
+        // > Update store.justified_checkpoint if a better checkpoint is known
+        if self.slots_since_epoch_start() == 0
+            && self.justified_checkpoint.epoch < self.best_justified_checkpoint.epoch
+        {
+            self.justified_checkpoint = self.best_justified_checkpoint;
+        }
+
         self.retry_delayed_until_slot(slot)
     }
 
-    /// <https://github.com/ethereum/eth2.0-specs/blob/65b615a4d4cf75a50b29d25c53f1bc5422770ae5/specs/core/0_fork-choice.md#on_block>
-    pub fn on_block(&mut self, block: BeaconBlock<C>) -> Result<()> {
-        // The specification uses 2 different ways to calculate what appears to be the same value:
-        // - <https://github.com/ethereum/eth2.0-specs/blame/65b615a4d4cf75a50b29d25c53f1bc5422770ae5/specs/core/0_fork-choice.md#L155>
-        // - <https://github.com/ethereum/eth2.0-specs/blame/65b615a4d4cf75a50b29d25c53f1bc5422770ae5/specs/core/0_fork-choice.md#L159>
-        // We assume this is an oversight.
-        let finalized_slot = Self::epoch_start_slot(self.finalized_checkpoint.epoch);
+    /// <https://github.com/ethereum/eth2.0-specs/blob/8201fb00249782528342a51434f6abcfc57b501f/specs/phase0/fork-choice.md#on_block>
+    pub fn on_block(&mut self, signed_block: SignedBeaconBlock<C>) -> Result<()> {
+        let block = &signed_block.message;
+
+        let mut finalized_slot = Self::start_of_epoch(self.finalized_checkpoint.epoch);
 
         // Ignore blocks from slots not later than the finalized block. Doing so ensures that:
         // - The genesis block is accepted even though it does not represent a state transition.
@@ -153,71 +145,133 @@ impl<C: Config> Store<C> {
             return Ok(());
         }
 
-        let parent_state = if let Some(state) = self.block_states.get(&block.parent_root) {
+        let pre_state = if let Some(state) = self.block_states.get(&block.parent_root) {
             state
         } else {
-            self.delay_until_block(block.parent_root, DelayedObject::BeaconBlock(block));
+            self.delay_until_block(block.parent_root, DelayedObject::Block(signed_block));
             return Ok(());
         };
 
+        // > Blocks cannot be in the future.
+        // > If they are, their consideration must be delayed until the are in the past.
         if self.slot < block.slot {
-            self.delay_until_slot(block.slot, DelayedObject::BeaconBlock(block));
+            self.delay_until_slot(block.slot, DelayedObject::Block(signed_block));
             return Ok(());
         }
 
-        let block_root = crypto::signed_root(&block);
+        let block_root = crypto::hash_tree_root(block);
 
+        // > Check block is a descendant of the finalized block at the checkpoint finalized slot
         ensure!(
-            self.ancestor(block_root, &block, finalized_slot) == self.finalized_checkpoint.root,
-            Error::NotDescendantOfFinalized {
-                block,
+            self.ancestor_without_lookup(block_root, &signed_block.message, finalized_slot)
+                == self.finalized_checkpoint.root,
+            Error::BlockNotDescendantOfFinalized {
+                block: signed_block,
                 finalized_block: self.blocks[&self.finalized_checkpoint.root].clone(),
             },
         );
 
-        let mut state = parent_state.clone();
-        process_slot::state_transition(&mut state, &block, true);
-        let state = self.block_states.entry(block_root).or_insert(state);
+        // > Make a copy of the state to avoid mutability issues
+        let mut state = pre_state.clone();
+        // > Check the block is valid and compute the post-state
+        process_slot::state_transition(&mut state, &signed_block, true);
+        // We perform two lookups because `HashMap::entry` results in `self` being borrowed mutably.
+        // See <https://doc.rust-lang.org/nomicon/lifetime-mismatch.html#limits-of-lifetimes>.
+        self.block_states.insert(block_root, state);
+        let state = &self.block_states[&block_root];
 
         // Add `block` to `self.blocks` only when it's passed all checks.
         // See <https://github.com/ethereum/eth2.0-specs/issues/1288>.
-        self.blocks.insert(block_root, block);
+        self.blocks.insert(block_root, signed_block);
 
+        // > Update justified checkpoint
         if self.justified_checkpoint.epoch < state.current_justified_checkpoint.epoch {
-            self.justified_checkpoint = state.current_justified_checkpoint;
+            if self.best_justified_checkpoint.epoch < state.current_justified_checkpoint.epoch {
+                self.best_justified_checkpoint = state.current_justified_checkpoint;
+            }
+            if self.should_update_justified_checkpoint(state.current_justified_checkpoint) {
+                self.justified_checkpoint = state.current_justified_checkpoint;
+            }
         }
 
+        // > Update finalized checkpoint
         if self.finalized_checkpoint.epoch < state.finalized_checkpoint.epoch {
             self.finalized_checkpoint = state.finalized_checkpoint;
+            finalized_slot = Self::start_of_epoch(self.finalized_checkpoint.epoch);
+
+            // > Update justified if new justified is later than store justified
+            // > or if store justified is not in chain with finalized checkpoint
+            if self.justified_checkpoint.epoch < state.current_justified_checkpoint.epoch
+                || self.ancestor(self.justified_checkpoint.root, finalized_slot)
+                    != self.finalized_checkpoint.root
+            {
+                self.justified_checkpoint = state.current_justified_checkpoint;
+            }
         }
 
         self.retry_delayed_until_block(block_root)
     }
 
-    /// <https://github.com/ethereum/eth2.0-specs/blob/65b615a4d4cf75a50b29d25c53f1bc5422770ae5/specs/core/0_fork-choice.md#on_attestation>
+    /// <https://github.com/ethereum/eth2.0-specs/blob/8201fb00249782528342a51434f6abcfc57b501f/specs/phase0/fork-choice.md#on_attestation>
+    ///
+    /// All of the helpers have been inlined to avoid redundant lookups or losing ownership.
     pub fn on_attestation(&mut self, attestation: Attestation<C>) -> Result<()> {
         let target = attestation.data.target;
+        let target_epoch_start = Self::start_of_epoch(target.epoch);
 
+        // > Attestations must be from the current or previous epoch
+        let current_epoch = Self::epoch_at_slot(self.slot);
+        // > Use GENESIS_EPOCH for previous when genesis to avoid underflow
+        let previous_epoch = current_epoch.saturating_sub(1).max(GENESIS_EPOCH);
+        if target.epoch < previous_epoch {
+            return Ok(());
+        }
+        if current_epoch < target.epoch {
+            self.delay_until_slot(target_epoch_start, DelayedObject::Attestation(attestation));
+            return Ok(());
+        }
+        ensure!(
+            target.epoch == Self::epoch_at_slot(attestation.data.slot),
+            Error::<C>::AttestationTargetsWrongEpoch { attestation },
+        );
+
+        // > Attestations target be for a known block.
+        // > If target block is unknown, delay consideration until the block is found
         let base_state = if let Some(state) = self.block_states.get(&target.root) {
             state
         } else {
             self.delay_until_block(target.root, DelayedObject::Attestation(attestation));
             return Ok(());
         };
-
-        let target_epoch_start = Self::epoch_start_slot(target.epoch);
-
+        // > Attestations cannot be from future epochs.
+        // > If they are, delay consideration until the epoch arrives
         if self.slot < target_epoch_start {
             self.delay_until_slot(target_epoch_start, DelayedObject::Attestation(attestation));
             return Ok(());
         }
 
-        let target_state = self.checkpoint_states.entry(target).or_insert_with(|| {
-            let mut target_state = base_state.clone();
-            process_slot::process_slots(&mut target_state, target_epoch_start);
-            target_state
-        });
+        // > Attestations must be for a known block.
+        // > If block is unknown, delay consideration until the block is found
+        if let Some(ghost_vote_block) = self.blocks.get(&attestation.data.beacon_block_root) {
+            // > Attestations must not be for blocks in the future.
+            // > If not, the attestation should not be considered
+            ensure!(
+                ghost_vote_block.message.slot <= attestation.data.slot,
+                Error::AttestationForFutureBlock {
+                    attestation,
+                    block: ghost_vote_block.clone()
+                },
+            );
+        } else {
+            self.delay_until_block(
+                attestation.data.beacon_block_root,
+                DelayedObject::Attestation(attestation),
+            );
+            return Ok(());
+        }
 
+        // > Attestations can only affect the fork choice of subsequent slots.
+        // > Delay consideration in the fork choice until their slot is in the past.
         if self.slot <= attestation.data.slot {
             self.delay_until_slot(
                 attestation.data.slot,
@@ -226,6 +280,15 @@ impl<C: Config> Store<C> {
             return Ok(());
         }
 
+        // > Store target checkpoint state if not yet seen
+        // > Get state at the `target` to fully validate attestation
+        let target_state = self.checkpoint_states.entry(target).or_insert_with(|| {
+            let mut target_state = base_state.clone();
+            process_slot::process_slots(&mut target_state, target_epoch_start);
+            target_state
+        });
+
+        // > Update latest messages for attesting indices
         let new_message = LatestMessage {
             epoch: target.epoch,
             root: attestation.data.beacon_block_root,
@@ -239,20 +302,41 @@ impl<C: Config> Store<C> {
             .map_err(DebugAsError::new)?;
 
         for index in indexed_attestation.attesting_indices.iter().copied() {
-            let old_message = self.latest_messages.entry(index).or_default();
-            if old_message.epoch < new_message.epoch {
-                *old_message = new_message;
-            }
+            self.latest_messages
+                .entry(index)
+                .and_modify(|old_message| {
+                    if old_message.epoch < new_message.epoch {
+                        *old_message = new_message;
+                    }
+                })
+                .or_insert(new_message);
         }
 
         Ok(())
     }
 
-    pub fn block(&self, root: H256) -> Option<&BeaconBlock<C>> {
-        self.blocks.get(&root)
+    /// <https://github.com/ethereum/eth2.0-specs/blob/8201fb00249782528342a51434f6abcfc57b501f/specs/phase0/fork-choice.md#compute_slots_since_epoch_start>
+    fn slots_since_epoch_start(&self) -> Slot {
+        self.slot - Self::start_of_epoch(Self::epoch_at_slot(self.slot))
     }
 
-    /// <https://github.com/ethereum/eth2.0-specs/blob/65b615a4d4cf75a50b29d25c53f1bc5422770ae5/specs/core/0_fork-choice.md#get_latest_attesting_balance>
+    /// <https://github.com/ethereum/eth2.0-specs/blob/8201fb00249782528342a51434f6abcfc57b501f/specs/phase0/fork-choice.md#get_ancestor>
+    fn ancestor(&self, root: H256, slot: Slot) -> H256 {
+        self.ancestor_without_lookup(root, &self.blocks[&root].message, slot)
+    }
+
+    /// The extra `block` parameter is used to avoid adding `block` to `self.blocks` before
+    /// verifying it. See <https://github.com/ethereum/eth2.0-specs/issues/1288>.
+    /// The parent of `block` must still be present in `self.blocks`, however.
+    fn ancestor_without_lookup(&self, root: H256, block: &BeaconBlock<C>, slot: Slot) -> H256 {
+        if block.slot <= slot {
+            root
+        } else {
+            self.ancestor(block.parent_root, slot)
+        }
+    }
+
+    /// <https://github.com/ethereum/eth2.0-specs/blob/8201fb00249782528342a51434f6abcfc57b501f/specs/phase0/fork-choice.md#get_latest_attesting_balance>
     ///
     /// The extra `block` parameter is used to avoid a redundant block lookup.
     fn latest_attesting_balance(&self, root: H256, block: &BeaconBlock<C>) -> Gwei {
@@ -266,8 +350,7 @@ impl<C: Config> Store<C> {
             .into_iter()
             .filter_map(|index| {
                 let latest_message = self.latest_messages.get(&index)?;
-                let latest_message_block = &self.blocks[&latest_message.root];
-                if self.ancestor(latest_message.root, latest_message_block, block.slot) == root {
+                if self.ancestor(latest_message.root, block.slot) == root {
                     // The `Result::expect` call would be avoidable if there were a function like
                     // `beacon_state_accessors::get_active_validator_indices` that returned
                     // references to the validators in addition to their indices.
@@ -282,25 +365,119 @@ impl<C: Config> Store<C> {
             .sum()
     }
 
-    /// <https://github.com/ethereum/eth2.0-specs/blob/65b615a4d4cf75a50b29d25c53f1bc5422770ae5/specs/core/0_fork-choice.md#get_ancestor>
+    /// <https://github.com/ethereum/eth2.0-specs/blob/8201fb00249782528342a51434f6abcfc57b501f/specs/phase0/fork-choice.md#get_filtered_block_tree>
     ///
-    /// The extra `block` parameter is used to avoid adding `block` to `self.blocks` before
-    /// verifying it. See <https://github.com/ethereum/eth2.0-specs/issues/1288>.
-    /// The parent of `block` must still be present in `self.blocks`, however.
-    fn ancestor(&self, root: H256, block: &BeaconBlock<C>, slot: Slot) -> H256 {
-        match block.slot.cmp(&slot) {
-            Ordering::Less => H256::zero(),
-            Ordering::Equal => root,
-            Ordering::Greater => {
-                let parent_root = block.parent_root;
-                let parent_block = &self.blocks[&block.parent_root];
-                self.ancestor(parent_root, parent_block, slot)
+    /// > Retrieve a filtered block tree from `store`, only returning branches
+    /// > whose leaf state's justified/finalized info agrees with that in `store`.
+    fn filtered_block_tree(&self) -> HashMap<H256, &SignedBeaconBlock<C>> {
+        let base = self.justified_checkpoint.root;
+        let mut blocks = hashmap! {};
+        self.filter_block_tree(base, &mut blocks);
+        blocks
+    }
+
+    /// <https://github.com/ethereum/eth2.0-specs/blob/8201fb00249782528342a51434f6abcfc57b501f/specs/phase0/fork-choice.md#filter_block_tree>
+    fn filter_block_tree<'s>(
+        &'s self,
+        root: H256,
+        blocks: &mut HashMap<H256, &'s SignedBeaconBlock<C>>,
+    ) -> bool {
+        let block = &self.blocks[&root];
+        let mut children = self
+            .blocks
+            .iter()
+            .filter_map(|(root, signed_block)| {
+                if signed_block.message.parent_root == *root {
+                    Some(root)
+                } else {
+                    None
+                }
+            })
+            .peekable();
+
+        // > If any children branches contain expected finalized/justified checkpoints,
+        // > add to filtered block-tree and signal viability to parent.
+        if children.peek().is_some() {
+            if children.any(|root| self.filter_block_tree(*root, blocks)) {
+                blocks.insert(root, block);
+                return true;
+            }
+            return false;
+        }
+
+        // > If leaf block, check finalized/justified checkpoints as matching latest.
+        let head_state = &self.block_states[&root];
+
+        let correct_justified = self.justified_checkpoint.epoch == GENESIS_EPOCH
+            || self.justified_checkpoint == head_state.current_justified_checkpoint;
+        let correct_finalized = self.finalized_checkpoint.epoch == GENESIS_EPOCH
+            || self.finalized_checkpoint == head_state.finalized_checkpoint;
+        // > If expected finalized/justified,
+        // > add to viable block-tree and signal viability to parent.
+        if correct_justified && correct_finalized {
+            blocks.insert(root, block);
+            return true;
+        }
+
+        // > Otherwise, branch not viable
+        false
+    }
+
+    /// <https://github.com/ethereum/eth2.0-specs/blob/8201fb00249782528342a51434f6abcfc57b501f/specs/phase0/fork-choice.md#get_head>
+    fn head(&self) -> H256 {
+        // > Get filtered block tree that only includes viable branches
+        let blocks = self.filtered_block_tree();
+
+        // > Execute the LMD-GHOST fork choice
+        let mut head = self.justified_checkpoint.root;
+        let justified_slot = Self::start_of_epoch(self.justified_checkpoint.epoch);
+
+        loop {
+            // > Sort by latest attesting balance with ties broken lexicographically
+            let child_with_plurality = blocks
+                .iter()
+                .filter_map(|(root, signed_block)| {
+                    let child = &signed_block.message;
+                    if child.parent_root == head && justified_slot < child.slot {
+                        Some((self.latest_attesting_balance(*root, child), *root))
+                    } else {
+                        None
+                    }
+                })
+                .max();
+
+            match child_with_plurality {
+                Some((_, root)) => head = root,
+                None => break head,
             }
         }
     }
 
-    fn epoch_start_slot(epoch: Epoch) -> Slot {
+    /// <https://github.com/ethereum/eth2.0-specs/blob/8201fb00249782528342a51434f6abcfc57b501f/specs/phase0/fork-choice.md#should_update_justified_checkpoint>
+    ///
+    /// > To address the bouncing attack, only update conflicting justified
+    /// > checkpoints in the fork choice if in the early slots of the epoch.
+    /// > Otherwise, delay incorporation of new justified checkpoint until next epoch boundary.
+    /// >
+    /// > See <https://ethresear.ch/t/prevention-of-bouncing-attack-on-ffg/6114> for more detailed
+    /// > analysis and discussion.
+    fn should_update_justified_checkpoint(&self, new_justified_checkpoint: Checkpoint) -> bool {
+        if self.slots_since_epoch_start() < C::safe_slots_to_update_justified() {
+            return true;
+        }
+
+        let justified_slot = Self::start_of_epoch(self.justified_checkpoint.epoch);
+
+        self.ancestor(new_justified_checkpoint.root, justified_slot)
+            == self.justified_checkpoint.root
+    }
+
+    fn start_of_epoch(epoch: Epoch) -> Slot {
         misc::compute_start_slot_at_epoch::<C>(epoch)
+    }
+
+    fn epoch_at_slot(slot: Slot) -> Epoch {
+        misc::compute_epoch_at_slot::<C>(slot)
     }
 
     fn delay_until_block(&mut self, block_root: H256, object: DelayedObject<C>) {
@@ -344,7 +521,7 @@ impl<C: Config> Store<C> {
         for object in objects {
             info!("retrying delayed object: {:?}", object);
             match object {
-                DelayedObject::BeaconBlock(block) => self.on_block(block)?,
+                DelayedObject::Block(signed_block) => self.on_block(signed_block)?,
                 DelayedObject::Attestation(attestation) => self.on_attestation(attestation)?,
             }
         }

@@ -1,7 +1,9 @@
-use crate::beacon_state_accessors::get_domain;
-use crate::crypto::{bls_verify, hash};
+use crate::{
+    beacon_state_accessors,
+    crypto::{bls_verify, hash},
+    misc,
+};
 use std::convert::{TryFrom, TryInto as _};
-use tree_hash::TreeHash;
 use typenum::marker_traits::Unsigned;
 use types::helper_functions_types::Error;
 use types::{
@@ -63,6 +65,14 @@ pub fn validate_indexed_attestation<C: Config>(
         Err(_) => return Err(Error::PubKeyConversionError),
     };
 
+    let domain = beacon_state_accessors::get_domain(
+        state,
+        C::domain_beacon_attester(),
+        Some(indexed_attestation.data.target.epoch),
+    );
+
+    let signing_root = misc::compute_signing_root(&indexed_attestation.data, domain);
+
     let signature_bytes =
         match SignatureBytes::from_bytes(indexed_attestation.signature.as_bytes().as_slice()) {
             Ok(value) => value,
@@ -70,16 +80,8 @@ pub fn validate_indexed_attestation<C: Config>(
         };
 
     if verify_signature {
-        let is_valid = match bls_verify(
-            &pubkeys_bytes,
-            &indexed_attestation.data.tree_hash_root(),
-            &signature_bytes,
-            get_domain(
-                state,
-                C::domain_attestation(),
-                Some(indexed_attestation.data.target.epoch),
-            ),
-        ) {
+        let is_valid = match bls_verify(&pubkeys_bytes, &signing_root.as_bytes(), &signature_bytes)
+        {
             Ok(value) => value,
             Err(_) => return Err(Error::InvalidSignature),
         };

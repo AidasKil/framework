@@ -74,6 +74,7 @@ use tokio::timer::Interval;
 use typenum::Unsigned as _;
 use types::{
     config::Config,
+    consts::GENESIS_SLOT,
     primitives::{Slot, UnixSeconds},
 };
 
@@ -130,7 +131,7 @@ fn next_tick_with_instant<C: Config, I: InstantLike, S: SystemTimeLike>(
     // The specification does not make it clear whether the number of the first slot after genesis
     // is 0 or 1. The fork choice rule fails if the slot is the same as in the genesis block, so we
     // assume the first slot is supposed to be 1.
-    let first_slot = C::genesis_slot() + 1;
+    let first_slot = GENESIS_SLOT + 1;
 
     let unix_epoch_to_now = now_system_time.duration_since(S::UNIX_EPOCH)?;
     let unix_epoch_to_genesis = Duration::from_secs(genesis_unix_time);

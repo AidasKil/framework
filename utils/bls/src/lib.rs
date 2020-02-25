@@ -1,3 +1,6 @@
+// Suppress lints because this is a vendored crate.
+#![allow(warnings)]
+
 extern crate milagro_bls;
 extern crate ssz_new as ssz;
 
@@ -75,7 +78,6 @@ pub fn bls_verify_aggregate(
     pubkey: &AggregatePublicKey,
     message: &[u8],
     signature: &AggregateSignature,
-    domain: u64,
 ) -> bool {
-    signature.verify(message, domain, pubkey)
+    signature.verify(message, pubkey)
 }

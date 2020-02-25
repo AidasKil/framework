@@ -14,7 +14,7 @@ impl Keypair {
     pub fn random() -> Self {
         let sk = SecretKey::random();
         let pk = PublicKey::from_secret_key(&sk);
-        Self { sk, pk }
+        Keypair { sk, pk }
     }
 
     pub fn identifier(&self) -> String {

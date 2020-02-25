@@ -160,7 +160,7 @@ mod tests {
         let original = FakePublicKey::from_secret_key(&sk);
 
         let bytes = ssz_encode(&original);
-        let decoded = FakePublicKey::from_ssz_bytes(&bytes).expect("Test");
+        let decoded = FakePublicKey::from_ssz_bytes(&bytes).unwrap();
 
         assert_eq!(original, decoded);
     }

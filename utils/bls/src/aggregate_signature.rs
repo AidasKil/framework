@@ -38,7 +38,7 @@ impl AggregateSignature {
     }
 
     /// Add (aggregate) another `AggregateSignature`.
-    pub fn add_aggregate(&mut self, agg_signature: &Self) {
+    pub fn add_aggregate(&mut self, agg_signature: &AggregateSignature) {
         self.aggregate_signature
             .add_aggregate(&agg_signature.aggregate_signature)
     }
@@ -47,17 +47,12 @@ impl AggregateSignature {
     ///
     /// Only returns `true` if the set of keys in the `AggregatePublicKey` match the set of keys
     /// that signed the `AggregateSignature`.
-    pub fn verify(
-        &self,
-        msg: &[u8],
-        domain: u64,
-        aggregate_public_key: &AggregatePublicKey,
-    ) -> bool {
+    pub fn verify(&self, msg: &[u8], aggregate_public_key: &AggregatePublicKey) -> bool {
         if self.is_empty {
             return false;
         }
         self.aggregate_signature
-            .verify(msg, domain, aggregate_public_key.as_raw())
+            .verify(msg, aggregate_public_key.as_raw())
     }
 
     /// Verify this AggregateSignature against multiple AggregatePublickeys with multiple Messages.
@@ -67,7 +62,6 @@ impl AggregateSignature {
     pub fn verify_multiple(
         &self,
         messages: &[&[u8]],
-        domain: u64,
         aggregate_public_keys: &[&AggregatePublicKey],
     ) -> bool {
         if self.is_empty {
@@ -83,7 +77,7 @@ impl AggregateSignature {
         }
 
         self.aggregate_signature
-            .verify_multiple(&msgs, domain, &aggregate_public_keys[..])
+            .verify_multiple(&msgs, &aggregate_public_keys[..])
     }
 
     /// Return AggregateSignature as bytes
@@ -98,7 +92,7 @@ impl AggregateSignature {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, SszDecodeError> {
         for byte in bytes {
             if *byte != 0 {
-                let sig = RawAggregateSignature::from_bytes(bytes).map_err(|_| {
+                let sig = RawAggregateSignature::from_bytes(&bytes).map_err(|_| {
                     SszDecodeError::BytesInvalid(format!(
                         "Invalid AggregateSignature bytes: {:?}",
                         bytes
@@ -115,12 +109,12 @@ impl AggregateSignature {
     }
 
     /// Returns the underlying signature.
-    pub const fn as_raw(&self) -> &RawAggregateSignature {
+    pub fn as_raw(&self) -> &RawAggregateSignature {
         &self.aggregate_signature
     }
 
     /// Returns the underlying signature.
-    pub const fn from_point(point: G2Point) -> Self {
+    pub fn from_point(point: G2Point) -> Self {
         Self {
             aggregate_signature: RawAggregateSignature { point },
             is_empty: false,
@@ -128,7 +122,7 @@ impl AggregateSignature {
     }
 
     /// Returns if the AggregateSignature `is_empty`
-    pub const fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.is_empty
     }
 
@@ -175,7 +169,7 @@ impl<'de> Deserialize<'de> for AggregateSignature {
         D: Deserializer<'de>,
     {
         let bytes = deserializer.deserialize_str(PrefixedHexVisitor)?;
-        let agg_sig = Self::from_ssz_bytes(&bytes)
+        let agg_sig = AggregateSignature::from_ssz_bytes(&bytes)
             .map_err(|e| serde::de::Error::custom(format!("invalid ssz ({:?})", e)))?;
 
         Ok(agg_sig)
@@ -193,10 +187,10 @@ mod tests {
         let keypair = Keypair::random();
 
         let mut original = AggregateSignature::new();
-        original.add(&Signature::new(&[42, 42], 0, &keypair.sk));
+        original.add(&Signature::new(&[42, 42], &keypair.sk));
 
         let bytes = original.as_ssz_bytes();
-        let decoded = AggregateSignature::from_ssz_bytes(&bytes).expect("Test");
+        let decoded = AggregateSignature::from_ssz_bytes(&bytes).unwrap();
 
         assert_eq!(original, decoded);
     }
