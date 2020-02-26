@@ -65,7 +65,7 @@
 //! [`timer`]:         https://crates.io/crates/timer
 //! [`white_rabbit`]:  https://crates.io/crates/white_rabbit
 
-use core::{iter, mem, time::Duration};
+use core::time::Duration;
 use std::time::{Instant, SystemTime};
 
 use anyhow::{Error, Result};
@@ -82,24 +82,39 @@ use crate::fake_time::{InstantLike, SystemTimeLike};
 
 #[derive(Clone, Copy)]
 #[cfg_attr(test, derive(PartialEq, Eq, Debug))]
-pub enum Tick {
-    SlotStart(Slot),
-    SlotMidpoint(Slot),
+pub enum Responsibility {
+    Propose,
+    Attest,
+    Aggregate,
 }
 
+impl Responsibility {
+    pub fn is_slot_start(self) -> bool {
+        match self {
+            Self::Propose => true,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+#[cfg_attr(test, derive(PartialEq, Eq, Debug))]
+pub struct Tick(pub Slot, pub Responsibility);
+
 impl Tick {
-    fn stream<E>(mut self) -> impl Stream<Item = Self, Error = E> {
-        stream::iter_ok(iter::repeat_with(move || {
+    fn into_iter(mut self) -> impl Iterator<Item = Self> {
+        core::iter::repeat_with(move || {
             let next = self.next();
-            mem::replace(&mut self, next)
-        }))
+            core::mem::replace(&mut self, next)
+        })
     }
 
     fn next(self) -> Self {
         match self {
-            Self::SlotStart(slot) => Self::SlotMidpoint(slot),
+            Self(slot, Responsibility::Propose) => Self(slot, Responsibility::Attest),
+            Self(slot, Responsibility::Attest) => Self(slot, Responsibility::Aggregate),
             // This will overflow in the far future.
-            Self::SlotMidpoint(slot) => Self::SlotStart(slot + 1),
+            Self(slot, Responsibility::Aggregate) => Self(slot + 1, Responsibility::Propose),
         }
     }
 }
@@ -110,13 +125,13 @@ pub fn start<C: Config>(
     // We assume the `Instant` and `SystemTime` obtained here correspond to the same point in time.
     // This is slightly inaccurate but the error will probably be negligible compared to clock
     // differences between different nodes in the network.
-    let (next_tick, instant) =
+    let (next_tick, next_instant) =
         next_tick_with_instant::<C, _, _>(Instant::now(), SystemTime::now(), genesis_unix_time)?;
 
-    let half_slot_duration = Duration::from_secs(C::SecondsPerSlot::U64) / 2;
+    let third_of_slot = Duration::from_secs(C::ThirdOfSlot::U64);
 
-    let slot_stream = Interval::new(instant, half_slot_duration)
-        .zip(next_tick.stream())
+    let slot_stream = Interval::new(next_instant, third_of_slot)
+        .zip(stream::iter_ok(next_tick.into_iter()))
         .map(|(_, tick)| tick)
         .from_err();
 
@@ -142,33 +157,30 @@ fn next_tick_with_instant<C: Config, I: InstantLike, S: SystemTimeLike>(
     // This means we are not allowed to subtract `Duration`s from `Instant`s. The `InstantLike`
     // trait conveniently prevents us from doing so.
 
-    let next_tick;
-    let now_to_next_tick;
+    let mut next_tick;
+    let mut now_to_next_tick;
 
     if unix_epoch_to_now <= unix_epoch_to_genesis {
-        next_tick = Tick::SlotStart(first_slot);
+        next_tick = Tick(first_slot, Responsibility::Propose);
         now_to_next_tick = unix_epoch_to_genesis - unix_epoch_to_now;
     } else {
+        let third_of_slot = Duration::from_secs(C::ThirdOfSlot::U64);
+        let seconds_per_slot = C::ThirdOfSlot::U64 * 3;
         let genesis_to_now = unix_epoch_to_now - unix_epoch_to_genesis;
-        // The `NonZero` bound on `Config::SecondsPerSlot` ensures this will not fail at runtime.
-        let slot_offset = genesis_to_now.as_secs() / C::SecondsPerSlot::U64;
-        let genesis_to_current_slot = Duration::from_secs(slot_offset * C::SecondsPerSlot::U64);
+        // The `NonZero` bound on `Config::ThirdOfSlot` ensures this will not fail at runtime.
+        let slot_offset = genesis_to_now.as_secs() / seconds_per_slot;
+        let genesis_to_current_slot = Duration::from_secs(slot_offset * seconds_per_slot);
         let current_slot_to_now = genesis_to_now - genesis_to_current_slot;
 
-        let slot_duration = Duration::from_secs(C::SecondsPerSlot::U64);
-        let half_slot_duration = slot_duration / 2;
-        let zero_duration = Duration::from_secs(0);
+        next_tick = Tick(first_slot + slot_offset, Responsibility::Propose);
+        now_to_next_tick = Duration::from_secs(0);
 
-        if current_slot_to_now == zero_duration {
-            next_tick = Tick::SlotStart(first_slot + slot_offset);
-            now_to_next_tick = zero_duration;
-        } else if current_slot_to_now <= half_slot_duration {
-            next_tick = Tick::SlotMidpoint(first_slot + slot_offset);
-            now_to_next_tick = half_slot_duration - current_slot_to_now;
-        } else {
-            next_tick = Tick::SlotStart(first_slot + slot_offset + 1);
-            now_to_next_tick = slot_duration - current_slot_to_now;
+        while now_to_next_tick < current_slot_to_now {
+            next_tick = next_tick.next();
+            now_to_next_tick += third_of_slot;
         }
+
+        now_to_next_tick -= current_slot_to_now;
     };
 
     Ok((next_tick, now_instant + now_to_next_tick))
@@ -182,26 +194,35 @@ mod tests {
     use test_case::test_case;
     use tokio::runtime::Builder;
     use types::config::MinimalConfig;
-    use void::ResultVoidExt as _;
 
     use crate::fake_time::{FakeInstant, FakeSystemTime, Timespec};
 
     use super::*;
 
     #[test]
-    fn tick_stream_produces_consecutive_ticks_starting_with_self() {
-        let mut stream = Tick::SlotStart(0).stream().wait().map(Result::void_unwrap);
+    fn tick_into_iter_produces_consecutive_ticks_starting_with_self() {
+        let actual = Tick(0, Responsibility::Propose)
+            .into_iter()
+            .take(9)
+            .collect::<Vec<_>>();
 
-        assert_eq!(stream.next(), Some(Tick::SlotStart(0)));
-        assert_eq!(stream.next(), Some(Tick::SlotMidpoint(0)));
-        assert_eq!(stream.next(), Some(Tick::SlotStart(1)));
-        assert_eq!(stream.next(), Some(Tick::SlotMidpoint(1)));
-        assert_eq!(stream.next(), Some(Tick::SlotStart(2)));
-        assert_eq!(stream.next(), Some(Tick::SlotMidpoint(2)));
+        let expected = [
+            Tick(0, Responsibility::Propose),
+            Tick(0, Responsibility::Attest),
+            Tick(0, Responsibility::Aggregate),
+            Tick(1, Responsibility::Propose),
+            Tick(1, Responsibility::Attest),
+            Tick(1, Responsibility::Aggregate),
+            Tick(2, Responsibility::Propose),
+            Tick(2, Responsibility::Attest),
+            Tick(2, Responsibility::Aggregate),
+        ];
+
+        assert_eq!(actual, expected);
     }
 
     #[test]
-    fn new_produces_slots_every_6_seconds() -> Result<()> {
+    fn new_produces_ticks_every_2_seconds() -> Result<()> {
         let now_unix_time = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)?
             .as_secs();
@@ -217,37 +238,42 @@ mod tests {
                 .inspect(|actual_async| assert_eq!(actual_async, &expected_async))
                 .wait()
         };
-        let sleep = |seconds| thread::sleep(Duration::from_secs(seconds));
+        let wait_a_second = || thread::sleep(Duration::from_secs(1));
 
         assert_poll(Async::NotReady)?;
-        sleep(1);
-        assert_poll(Async::Ready(Some(Tick::SlotStart(1))))?;
-        sleep(2);
+        wait_a_second();
+        assert_poll(Async::Ready(Some(Tick(1, Responsibility::Propose))))?;
+        wait_a_second();
         assert_poll(Async::NotReady)?;
-        sleep(1);
-        assert_poll(Async::Ready(Some(Tick::SlotMidpoint(1))))?;
-        sleep(2);
+        wait_a_second();
+        assert_poll(Async::Ready(Some(Tick(1, Responsibility::Attest))))?;
+        wait_a_second();
         assert_poll(Async::NotReady)?;
-        sleep(1);
-        assert_poll(Async::Ready(Some(Tick::SlotStart(2))))?;
+        wait_a_second();
+        assert_poll(Async::Ready(Some(Tick(1, Responsibility::Aggregate))))?;
+        wait_a_second();
+        assert_poll(Async::NotReady)?;
+        wait_a_second();
+        assert_poll(Async::Ready(Some(Tick(2, Responsibility::Propose))))?;
 
         Ok(())
     }
 
-    #[test_case(100, Tick::SlotStart(1),    777; "0th slot start before genesis")]
-    #[test_case(777, Tick::SlotStart(1),    777; "0th slot start at genesis")]
-    #[test_case(778, Tick::SlotMidpoint(1), 780; "0th slot midpoint 1 second after genesis")]
-    #[test_case(780, Tick::SlotMidpoint(1), 780; "0th slot midpoint 3 seconds after genesis")]
-    #[test_case(781, Tick::SlotStart(2),    783; "1st slot start 4 seconds after genesis")]
-    #[test_case(783, Tick::SlotStart(2),    783; "1st slot start 6 seconds after genesis")]
-    #[test_case(784, Tick::SlotMidpoint(2), 786; "1st slot midpoint 7 seconds after genesis")]
+    #[test_case(100, 777, Tick(1, Responsibility::Propose))]
+    #[test_case(777, 777, Tick(1, Responsibility::Propose))]
+    #[test_case(778, 779, Tick(1, Responsibility::Attest))]
+    #[test_case(779, 779, Tick(1, Responsibility::Attest))]
+    #[test_case(780, 781, Tick(1, Responsibility::Aggregate))]
+    #[test_case(781, 781, Tick(1, Responsibility::Aggregate))]
+    #[test_case(782, 783, Tick(2, Responsibility::Propose))]
+    #[test_case(783, 783, Tick(2, Responsibility::Propose))]
     fn next_tick_with_instant_produces(
-        now: UnixSeconds,
+        now_seconds: UnixSeconds,
+        expected_seconds: UnixSeconds,
         expected_tick: Tick,
-        expected_timestamp: UnixSeconds,
     ) {
-        let now_timespec = Timespec::from_secs(now);
-        let expected_instant = FakeInstant(Timespec::from_secs(expected_timestamp));
+        let now_timespec = Timespec::from_secs(now_seconds);
+        let expected_instant = FakeInstant(Timespec::from_secs(expected_seconds));
 
         let (actual_tick, actual_instant) = next_tick_with_instant::<MinimalConfig, _, _>(
             FakeInstant(now_timespec),

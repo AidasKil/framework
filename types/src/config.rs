@@ -114,7 +114,6 @@ where
         + Debug
         + Send
         + Sync;
-    type SecondsPerSlot: Unsigned + NonZero;
     type SlotsPerEpoch: Unsigned
         + Clone
         + Copy
@@ -166,6 +165,7 @@ where
         + Ord
         + Default
         + Debug;
+    type ThirdOfSlot: Unsigned + NonZero;
 
     fn base_reward_factor() -> u64 {
         64
@@ -282,13 +282,13 @@ impl Config for MainnetConfig {
     type MaxProposerSlashings = typenum::U16;
     type MaxValidatorsPerCommittee = typenum::U2048;
     type MaxVoluntaryExits = typenum::U16;
-    type SecondsPerSlot = typenum::U12;
     type SlotsPerEpoch = typenum::U32;
     type SlotsPerEth1VotingPeriod = typenum::U1024;
     type SlotsPerHistoricalRoot = typenum::U8192;
     type ValidatorRegistryLimit = typenum::U1099511627776;
 
     type MaxAttestationsPerEpoch = Prod<Self::MaxAttestations, Self::SlotsPerEpoch>;
+    type ThirdOfSlot = typenum::U4;
 }
 
 #[derive(
@@ -306,13 +306,13 @@ impl Config for MinimalConfig {
     type MaxProposerSlashings = typenum::U16;
     type MaxValidatorsPerCommittee = typenum::U2048;
     type MaxVoluntaryExits = typenum::U16;
-    type SecondsPerSlot = typenum::U6;
     type SlotsPerEpoch = typenum::U8;
     type SlotsPerEth1VotingPeriod = typenum::U16;
     type SlotsPerHistoricalRoot = typenum::U64;
     type ValidatorRegistryLimit = typenum::U1099511627776;
 
     type MaxAttestationsPerEpoch = Prod<Self::MaxAttestations, Self::SlotsPerEpoch>;
+    type ThirdOfSlot = typenum::U2;
 
     fn max_committees_per_slot() -> u64 {
         4

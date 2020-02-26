@@ -21,4 +21,3 @@ types = { path = '../types' }
 
 [dev-dependencies]
 test-case = '0.3.3'
-void = '1.0.2'

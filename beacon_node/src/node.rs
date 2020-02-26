@@ -29,17 +29,9 @@ impl<C: Config> Node<C> {
         Self(Store::new(genesis_state, genesis_block))
     }
 
-    pub fn head_state(&self) -> &BeaconState<C> {
-        self.0.head_state()
-    }
-
     pub fn handle_slot_start(&mut self, slot: Slot) -> Result<()> {
         info!("slot {} started", slot);
         self.0.on_slot(slot)
-    }
-
-    pub fn handle_slot_midpoint(&mut self, slot: Slot) {
-        info!("slot {} midpoint", slot);
     }
 }
 
