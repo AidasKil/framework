@@ -202,7 +202,7 @@ mod spec_tests {
 
         assert_eq!(ssz_value, yaml_value);
         assert_eq!(ssz_bytes, yaml_value.as_ssz_bytes());
-        assert_eq!(yaml_value.tree_hash_root(), hash_tree_root.as_bytes());
+        assert_eq!(yaml_value.tree_hash_root(), hash_tree_root);
 
         yaml_value
     }

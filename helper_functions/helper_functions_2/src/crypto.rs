@@ -48,8 +48,7 @@ pub fn bls_aggregate_pubkeys(pubkeys: &[PublicKey]) -> AggregatePublicKey {
 }
 
 pub fn hash_tree_root<T: TreeHash>(object: &T) -> H256 {
-    let hash = object.tree_hash_root();
-    H256::from_slice(hash.as_slice())
+    object.tree_hash_root()
 }
 
 #[cfg(test)]

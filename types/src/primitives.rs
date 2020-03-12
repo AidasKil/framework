@@ -96,7 +96,7 @@ impl TreeHash for Version {
         VersionAsArray::tree_hash_packing_factor()
     }
 
-    fn tree_hash_root(&self) -> Vec<u8> {
+    fn tree_hash_root(&self) -> H256 {
         self.as_array().tree_hash_root()
     }
 }
@@ -155,7 +155,7 @@ impl TreeHash for Domain {
         DomainAsInteger::tree_hash_packing_factor()
     }
 
-    fn tree_hash_root(&self) -> Vec<u8> {
+    fn tree_hash_root(&self) -> H256 {
         self.to_integer().tree_hash_root()
     }
 }

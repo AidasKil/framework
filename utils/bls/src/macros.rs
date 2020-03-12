@@ -48,13 +48,20 @@ macro_rules! impl_tree_hash {
                 unreachable!("Vector should never be packed.")
             }
 
-            fn tree_hash_root(&self) -> Vec<u8> {
+            fn tree_hash_root(&self) -> tree_hash::Hash256 {
                 // We could use the tree hash implementation for `FixedVec<u8, $byte_size>`,
                 // but benchmarks have show that to be at least 15% slower because of the
                 // unnecessary copying and allocation (one Vec per byte)
                 let values_per_chunk = tree_hash::BYTES_PER_CHUNK;
                 let minimum_chunk_count = ($byte_size + values_per_chunk - 1) / values_per_chunk;
-                tree_hash::merkle_root(&self.as_ssz_bytes(), minimum_chunk_count)
+
+                let mut hasher = tree_hash::MerkleHasher::with_leaves(minimum_chunk_count);
+                hasher
+                    .write(&self.as_ssz_bytes())
+                    .expect("bls should not exceed leaf count");
+                hasher
+                    .finish()
+                    .expect("bls should not exceed leaf count from buffer")
             }
         }
     };

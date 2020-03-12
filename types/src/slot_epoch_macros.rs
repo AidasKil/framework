@@ -233,7 +233,7 @@ macro_rules! impl_ssz {
                 32 / 8
             }
 
-            fn tree_hash_root(&self) -> Vec<u8> {
+            fn tree_hash_root(&self) -> H256 {
                 int_to_bytes::int_to_bytes32(self.0)
             }
         }
