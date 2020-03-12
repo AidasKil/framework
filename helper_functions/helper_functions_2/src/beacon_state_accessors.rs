@@ -240,7 +240,7 @@ pub fn get_domain<C: Config>(
     } else {
         state.fork.current_version
     };
-    compute_domain(domain_type, Some(&fork_version))
+    compute_domain::<C>(domain_type, Some(&fork_version))
 }
 
 pub fn get_indexed_attestation<C: Config>(

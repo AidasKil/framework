@@ -133,15 +133,17 @@ pub fn compute_proposer_index<C: Config>(
     }
 }
 
-pub fn compute_domain(domain_type: DomainType, fork_version: Option<&Version>) -> Domain {
-    let version = match fork_version {
-        Some(version) => version.as_array(),
-        None => &[0_u8; 4],
-    };
+pub fn compute_domain<C: Config>(
+    domain_type: DomainType,
+    fork_version: Option<&Version>,
+) -> Domain {
+    let version = fork_version
+        .copied()
+        .unwrap_or_else(C::genesis_fork_version);
 
     let mut bytes = [0_u8; 8];
     (&mut bytes[0..4]).copy_from_slice(&domain_type.to_le_bytes()[0..4]);
-    (&mut bytes[4..8]).copy_from_slice(version);
+    (&mut bytes[4..8]).copy_from_slice(version.as_array());
     bytes_to_int(bytes).into()
 }
 

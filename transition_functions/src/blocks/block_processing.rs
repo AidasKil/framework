@@ -93,7 +93,7 @@ fn process_deposit<T: Config>(state: &mut BeaconState<T>, deposit: &Deposit) {
     //# Verify the deposit signature (proof of possession) for new validators.
     //# Note: The deposit contract does not check signatures.
     //# Note: Deposits are valid across forks, thus the deposit domain is retrieved directly from `compute_domain`.
-    let domain = compute_domain(T::domain_deposit() as u32, None);
+    let domain = compute_domain::<T>(T::domain_deposit(), None);
     let deposit_message = DepositMessage {
         pubkey: pubkey.clone(),
         withdrawal_credentials: *withdrawal_credentials,

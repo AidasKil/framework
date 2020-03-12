@@ -24,14 +24,18 @@ pub fn compute_activation_exit_epoch<C: Config>(epoch: Epoch) -> Epoch {
     epoch + 1 + C::max_seed_lookahead()
 }
 
-pub fn compute_domain(domain_type: DomainType, fork_version: Option<&Version>) -> Domain {
+pub fn compute_domain<C: Config>(
+    domain_type: DomainType,
+    fork_version: Option<&Version>,
+) -> Domain {
     let domain_type_bytes = int_to_bytes(u64::try_from(domain_type).expect(""), 4).expect("");
     let mut domain_bytes = [0, 0, 0, 0, 0, 0, 0, 0];
+    let f = fork_version
+        .copied()
+        .unwrap_or_else(C::genesis_fork_version);
     for i in 0..4 {
         domain_bytes[i] = domain_type_bytes[i];
-        if let Some(f) = fork_version {
-            domain_bytes[i + 4] = f[i];
-        }
+        domain_bytes[i + 4] = f[i];
     }
     bytes_to_int(&domain_bytes).expect("").into()
 }

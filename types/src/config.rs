@@ -3,10 +3,11 @@
 use core::fmt::Debug;
 use core::hash::Hash;
 
+use hex_literal::hex;
 use serde::{Deserialize, Serialize};
 use typenum::{NonZero, Prod, Unsigned};
 
-use crate::primitives::DomainType;
+use crate::primitives::{DomainType, Version};
 
 pub trait Config
 where
@@ -203,6 +204,9 @@ where
     fn ejection_balance() -> u64 {
         16_000_000_000
     }
+    fn genesis_fork_version() -> Version {
+        hex!("00000000").into()
+    }
     fn inactivity_penalty_quotient() -> u64 {
         2_u64.pow(25)
     }
@@ -314,6 +318,9 @@ impl Config for MinimalConfig {
     type MaxAttestationsPerEpoch = Prod<Self::MaxAttestations, Self::SlotsPerEpoch>;
     type ThirdOfSlot = typenum::U2;
 
+    fn genesis_fork_version() -> Version {
+        hex!("00000001").into()
+    }
     fn max_committees_per_slot() -> u64 {
         4
     }
