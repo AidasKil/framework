@@ -9,6 +9,8 @@
 //!
 //! [other types of objects]: https://github.com/ethereum/eth2.0-specs/blob/1f3a5b156f7a0e7616f7c8bc31e27fa4da392139/specs/networking/p2p-interface.md#message
 
+#![allow(clippy::missing_errors_doc)]
+
 use anyhow::Result;
 use types::{
     config::Config,

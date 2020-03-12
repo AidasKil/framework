@@ -1,3 +1,5 @@
+#![allow(clippy::missing_errors_doc)]
+
 use core::{iter, ops::Deref as _};
 
 use anyhow::{bail, ensure, Error, Result};
@@ -138,7 +140,7 @@ impl<C: Config, N: Networked<C>> EventHandler<C, N> {
                 RPCEvent::Request(request_id, RPCRequest::Status(status_message)),
             ) => self.handle_status_request(peer_id, request_id, &status_message),
             Libp2pEvent::RPC(peer_id, RPCEvent::Request(_, RPCRequest::Goodbye(reason))) => {
-                self.handle_goodbye_request(&peer_id, &reason)
+                handle_goodbye_request(&peer_id, &reason)
             }
             Libp2pEvent::RPC(
                 peer_id,
@@ -219,18 +221,6 @@ impl<C: Config, N: Networked<C>> EventHandler<C, N> {
                 },
             ),
         ))
-    }
-
-    fn handle_goodbye_request(
-        &self,
-        peer_id: &PeerId,
-        reason: &GoodbyeReason,
-    ) -> Result<EventFuture> {
-        info!(
-            "received Goodbye (peer_id: {}, reason: {})",
-            peer_id, reason,
-        );
-        Ok(Box::new(future::ok(())))
     }
 
     fn handle_blocks_by_range_request(
@@ -598,6 +588,7 @@ impl<C: Config, N: Networked<C>> Future for EventHandler<C, N> {
     }
 }
 
+#[must_use]
 pub fn channel<C: Config>() -> (Sender<C>, Receiver<C>) {
     let (sender, receiver) = mpsc::unbounded();
     (Sender(sender), Receiver(receiver))
@@ -617,6 +608,14 @@ pub fn run_network<C: Config, N: Networked<C>>(
         next_request_id: 0,
         in_progress: None,
     })
+}
+
+fn handle_goodbye_request(peer_id: &PeerId, reason: &GoodbyeReason) -> Result<EventFuture> {
+    info!(
+        "received Goodbye (peer_id: {}, reason: {})",
+        peer_id, reason,
+    );
+    Ok(Box::new(future::ok(())))
 }
 
 fn status_message_to_status(status_message: &StatusMessage) -> Status {

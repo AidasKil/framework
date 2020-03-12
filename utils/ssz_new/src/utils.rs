@@ -4,10 +4,12 @@ pub fn ssz_encode<T: SszEncode>(val: &T) -> Vec<u8> {
     val.as_ssz_bytes()
 }
 
+#[must_use]
 pub fn encode_offset(offset: usize) -> Vec<u8> {
     offset.to_le_bytes()[..BYTES_PER_LENGTH_OFFSET].to_vec()
 }
 
+#[must_use]
 pub fn encode_items_from_parts(
     fixed_parts: &[Option<Vec<u8>>],
     variable_parts: &[Vec<u8>],
@@ -118,6 +120,7 @@ pub struct Decoder<'a> {
 }
 
 impl<'a> Decoder<'a> {
+    #[must_use]
     pub fn for_bytes(bytes: &'a [u8]) -> Self {
         Self {
             bytes,

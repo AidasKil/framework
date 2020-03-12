@@ -90,10 +90,7 @@ pub enum Responsibility {
 
 impl Responsibility {
     pub fn is_slot_start(self) -> bool {
-        match self {
-            Self::Propose => true,
-            _ => false,
-        }
+        matches!(self, Self::Propose)
     }
 }
 

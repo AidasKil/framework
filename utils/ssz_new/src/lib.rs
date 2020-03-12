@@ -1,3 +1,5 @@
+#![allow(clippy::missing_errors_doc)]
+
 mod decode;
 mod encode;
 mod types;
@@ -21,6 +23,7 @@ pub trait SszDecode: Sized {
 
     fn is_ssz_fixed_len() -> bool;
 
+    #[must_use]
     fn ssz_fixed_len() -> usize {
         BYTES_PER_LENGTH_OFFSET
     }

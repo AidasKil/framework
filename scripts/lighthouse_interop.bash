@@ -76,7 +76,7 @@ lighthouse_validator_client() {
         insecure "$FIRST_VALIDATOR" "$VALIDATOR_COUNT"
 }
 
-#git submodule update --init "$lighthouse_dir"
+git submodule update --init "$lighthouse_dir"
 
 exec  {bn}< <(beacon_node                 |& ts 'beacon_node                 |')
 exec {lbn}< <(lighthouse_beacon_node      |& ts 'lighthouse_beacon_node      |')

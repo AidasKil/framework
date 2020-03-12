@@ -5,6 +5,8 @@
 //! offending object or return `Err`. All other operations that can raise exceptions in Python
 //! (like indexing into `dict`s) are represented by statements that panic on failure.
 
+#![allow(clippy::missing_errors_doc)]
+
 use core::{convert::TryInto as _, mem};
 use std::collections::{BTreeMap, HashMap};
 
@@ -77,6 +79,7 @@ pub struct Store<C: Config> {
 
 impl<C: Config> Store<C> {
     /// <https://github.com/ethereum/eth2.0-specs/blob/8201fb00249782528342a51434f6abcfc57b501f/specs/phase0/fork-choice.md#get_forkchoice_store>
+    #[must_use]
     pub fn new(anchor_state: BeaconState<C>, anchor_block: SignedBeaconBlock<C>) -> Self {
         let epoch = beacon_state_accessors::get_current_epoch(&anchor_state);
         let root = crypto::hash_tree_root(&anchor_block.message);
@@ -97,10 +100,12 @@ impl<C: Config> Store<C> {
         }
     }
 
+    #[must_use]
     pub fn head_state(&self) -> &BeaconState<C> {
         &self.block_states[&self.head()]
     }
 
+    #[must_use]
     pub fn block(&self, root: H256) -> Option<&SignedBeaconBlock<C>> {
         self.blocks.get(&root)
     }

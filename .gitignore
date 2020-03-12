@@ -1,4 +1,3 @@
 .idea/
 /target/
 cobertura.xml
-rustup-init.sh
