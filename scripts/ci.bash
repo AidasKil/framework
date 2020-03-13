@@ -43,4 +43,4 @@ rustfmt --check -- "$script_dir"/../!(lighthouse|target)/**/*.rs
 # multithreaded tests. Tarpaulin exits successfully (with zero status) when that
 # happens. We work around that by searching Tarpaulin's output for error
 # messages and making the build fail if we find any.
-! "$script_dir"/tarpaulin.sh |& ag --passthrough ERROR
+! "$script_dir"/tarpaulin.sh |& ag --passthrough Error
