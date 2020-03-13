@@ -1,0 +1,19 @@
+name: CI Build
+
+on: [push]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - run: |
+        git submodule sync --recursive
+        git submodule update --init --force --recursive
+        (cd eth2.0-spec-tests && git lfs pull)
+    - name: Install packages
+      run: sudo apt-get install cmake libssl-dev moreutils pkg-config silversearcher-ag zlib1g-dev
+    - name: Build
+      run: ./scripts/ci.bash
