@@ -12,6 +12,9 @@ install_dependencies_on_debian() {
 }
 
 set -o errexit
+set -o noclobber
+set -o nounset
+
 shopt -s extglob globstar
 
 export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
