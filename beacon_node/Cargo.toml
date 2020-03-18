@@ -6,18 +6,26 @@ edition = '2018'
 [dependencies]
 anyhow = '1.0.25'
 beacon_fork_choice = { path = '../beacon_fork_choice' }
+bls = { path = '../utils/bls' }
+eth2_hashing = '0.1.1'
 eth2_network = { path = '../eth2_network' }
 eth2_network_libp2p = { path = '../eth2_network_libp2p' }
+eth2_ssz_types = '0.2.0'
 futures = '0.1.29'
 helper_functions = '0.1.0'
+hex-literal = '0.2.1'
 log = '0.4.8'
+num-bigint = '0.2.6'
 serde = { version = '1.0', features = ['derive']}
 serde_yaml = '0.8.11'
 simple_logger = '1.3.0'
 thiserror = '1.0.9'
 tokio = '0.1.22'
+transition_functions = { path = '../transition_functions' }
 typenum = '1.11.2'
 types = { path = '../types' }
 
 [dev-dependencies]
+spec_test_utils = { path = '../spec_test_utils' }
 test-case = '0.3.3'
+test-generator = '0.3.0'

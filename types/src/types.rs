@@ -1,5 +1,3 @@
-#![allow(clippy::default_trait_access)]
-
 //temporary Lighthouse SSZ and hashing implementation
 use bls::PublicKeyBytes;
 use ethereum_types::H256 as Hash256;
@@ -10,9 +8,7 @@ use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 use typenum::{Sum, U1};
 
-use crate::config::*;
-use crate::consts;
-use crate::primitives::*;
+use crate::{config::Config, primitives::*};
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize, SszEncode, SszDecode, TreeHash)]
 pub struct Attestation<C: Config> {
@@ -122,7 +118,7 @@ pub struct Checkpoint {
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize, SszEncode, SszDecode, TreeHash)]
 pub struct Deposit {
-    pub proof: FixedVector<H256, Sum<consts::DepositContractTreeDepth, U1>>,
+    pub proof: DepositProof,
     pub data: DepositData,
 }
 
@@ -132,6 +128,17 @@ pub struct DepositData {
     pub withdrawal_credentials: H256,
     pub amount: u64,
     pub signature: SignatureBytes,
+}
+
+impl Default for DepositData {
+    fn default() -> Self {
+        Self {
+            pubkey: PublicKeyBytes::empty(),
+            withdrawal_credentials: Default::default(),
+            amount: Default::default(),
+            signature: SignatureBytes::empty(),
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Deserialize, Serialize, SszEncode, SszDecode, TreeHash)]

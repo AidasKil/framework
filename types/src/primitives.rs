@@ -5,14 +5,20 @@ use ethereum_types::{H32, H64};
 use serde::{Deserialize, Serialize};
 use ssz_new::{SszDecode, SszDecodeError, SszEncode};
 use ssz_new_derive::{SszDecode, SszEncode};
+use ssz_types::FixedVector;
 use tree_hash::{TreeHash, TreeHashType};
 use tree_hash_derive::TreeHash;
+use typenum::{Sum, U1};
+
+use crate::consts::DepositContractTreeDepth;
 
 pub use bls::{AggregatePublicKey, AggregateSignature, PublicKey, SecretKey, Signature};
 pub use bls::{PublicKeyBytes, SignatureBytes};
 pub use ethereum_types::H256;
 
 pub type AggregateSignatureBytes = SignatureBytes;
+pub type DepositIndex = u64;
+pub type DepositProof = FixedVector<H256, Sum<DepositContractTreeDepth, U1>>;
 pub type Epoch = u64;
 pub type Gwei = u64;
 pub type Shard = u64;

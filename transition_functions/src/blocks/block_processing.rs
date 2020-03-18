@@ -60,13 +60,13 @@ fn process_voluntary_exit<T: Config>(
     initiate_validator_exit(state, voluntary_exit.validator_index).unwrap();
 }
 
-fn process_deposit<T: Config>(state: &mut BeaconState<T>, deposit: &Deposit) {
+pub fn process_deposit<T: Config>(state: &mut BeaconState<T>, deposit: &Deposit) {
     //# Verify the Merkle branch  is_valid_merkle_branch
 
     assert!(is_valid_merkle_branch(
         &hash_tree_root(&deposit.data),
         &deposit.proof,
-        DEPOSIT_CONTRACT_TREE_DEPTH + 1,
+        DepositContractTreeDepth::U64 + 1,
         state.eth1_deposit_index,
         &state.eth1_data.deposit_root
     )

@@ -11,43 +11,54 @@ use types::{
     beacon_state::BeaconState,
     config::Config,
     primitives::{Slot, H256},
-    types::{Attestation, SignedBeaconBlock},
+    types::{Attestation, Eth1Data, SignedBeaconBlock},
 };
 
-pub struct Node<C: Config>(Store<C>);
+use crate::genesis;
+
+pub struct Node<C: Config> {
+    store: Store<C>,
+    eth1_data: Eth1Data,
+}
 
 impl<C: Config> Node<C> {
     pub fn new(genesis_state: BeaconState<C>) -> Self {
-        // The way the genesis block is constructed makes it possible for many parties to
-        // independently produce the same block. But why does the genesis block have to
-        // exist at all? Perhaps the first block could be proposed by a validator as well
-        // (and not necessarily in slot 0)?
-        let mut genesis_block = SignedBeaconBlock::default();
-        // Note that `genesis_block.message.body.eth1_data` is not set to
-        // `genesis_state.latest_eth1_data`.
-        genesis_block.message.state_root = crypto::hash_tree_root(&genesis_state);
-        Self(Store::new(genesis_state, genesis_block))
+        let genesis_block = genesis::block(&genesis_state);
+        let eth1_data = genesis_state.eth1_data.clone();
+        Self {
+            store: Store::new(genesis_state, genesis_block),
+            eth1_data,
+        }
+    }
+
+    pub fn head_state(&self) -> Result<&BeaconState<C>> {
+        self.store.head_state()
+    }
+
+    pub fn handle_eth1_data(&mut self, eth1_data: Eth1Data) {
+        info!("received Ethereum 1.0 data: {:?}", eth1_data);
+        self.eth1_data = eth1_data;
     }
 
     pub fn handle_slot_start(&mut self, slot: Slot) -> Result<()> {
         info!("slot {} started", slot);
-        self.0.on_slot(slot)
+        self.store.on_slot(slot)
     }
 }
 
 impl<C: Config> Networked<C> for Node<C> {
     fn accept_beacon_block(&mut self, block: SignedBeaconBlock<C>) -> Result<()> {
         info!("received beacon block: {:?}", block);
-        self.0.on_block(block)
+        self.store.on_block(block)
     }
 
     fn accept_beacon_attestation(&mut self, attestation: Attestation<C>) -> Result<()> {
         info!("received beacon attestation: {:?}", attestation);
-        self.0.on_attestation(attestation)
+        self.store.on_attestation(attestation)
     }
 
     fn get_status(&self) -> Result<Status> {
-        let head_state = self.0.head_state()?;
+        let head_state = self.store.head_state()?;
         let status = Status {
             fork_version: head_state.fork.current_version,
             finalized_root: head_state.finalized_checkpoint.root,
@@ -59,7 +70,7 @@ impl<C: Config> Networked<C> for Node<C> {
     }
 
     fn get_beacon_block(&self, root: H256) -> Option<&SignedBeaconBlock<C>> {
-        self.0.block(root)
+        self.store.block(root)
     }
 }
 

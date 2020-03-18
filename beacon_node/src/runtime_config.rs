@@ -1,9 +1,11 @@
-use std::path::PathBuf;
-
 use anyhow::{ensure, Result};
 use eth2_network_libp2p::NetworkConfig;
 use serde::Deserialize;
 use thiserror::Error;
+use types::{
+    config::{Config as _, MainnetConfig},
+    primitives::{UnixSeconds, ValidatorIndex},
+};
 
 #[derive(Debug, Error)]
 enum Error {
@@ -25,7 +27,8 @@ pub enum Preset {
 #[serde(default, deny_unknown_fields)]
 pub struct RuntimeConfig {
     pub preset: Preset,
-    pub genesis_state_path: PathBuf,
+    pub genesis_time: UnixSeconds,
+    pub validator_count: ValidatorIndex,
     #[serde(flatten)]
     pub network: NetworkConfig,
 }
@@ -34,7 +37,8 @@ impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
             preset: Preset::Mainnet,
-            genesis_state_path: "genesis-state.yaml".into(),
+            genesis_time: MainnetConfig::min_genesis_time(),
+            validator_count: MainnetConfig::min_genesis_active_validator_count(),
             network: NetworkConfig::default(),
         }
     }

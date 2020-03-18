@@ -7,7 +7,7 @@ use hex_literal::hex;
 use serde::{Deserialize, Serialize};
 use typenum::{NonZero, Prod, Unsigned};
 
-use crate::primitives::{DomainType, Version};
+use crate::primitives::{DomainType, UnixSeconds, Version};
 
 pub trait Config
 where
@@ -234,6 +234,9 @@ where
     fn min_genesis_active_validator_count() -> u64 {
         64
     }
+    fn min_genesis_delay() -> UnixSeconds {
+        86400
+    }
     // Bitcoin's 11th anniversary
     // (see <https://github.com/ethereum/eth2.0-specs/issues/1129#issue-448918350>).
     fn min_genesis_time() -> u64 {
@@ -323,6 +326,9 @@ impl Config for MinimalConfig {
     }
     fn max_committees_per_slot() -> u64 {
         4
+    }
+    fn min_genesis_delay() -> UnixSeconds {
+        300
     }
     fn safe_slots_to_update_justified() -> u64 {
         2

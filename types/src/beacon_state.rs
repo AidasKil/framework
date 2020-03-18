@@ -1,5 +1,6 @@
 use crate::{
-    config::*, consts, helper_functions_types::Error as HelperError, primitives::*, types::*,
+    config::*, consts, fixed_vector, helper_functions_types::Error as HelperError, primitives::*,
+    types::*,
 };
 use ethereum_types::H256 as Hash256;
 use serde::{Deserialize, Serialize};
@@ -54,9 +55,7 @@ impl From<HelperError> for Error {
     }
 }
 
-#[derive(
-    Debug, PartialEq, Clone, Serialize, Deserialize, SszDecode, SszEncode, TreeHash, Default,
-)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, SszDecode, SszEncode, TreeHash)]
 pub struct BeaconState<C: Config> {
     // Versioning
     pub genesis_time: u64,
@@ -94,4 +93,32 @@ pub struct BeaconState<C: Config> {
     pub previous_justified_checkpoint: Checkpoint,
     pub current_justified_checkpoint: Checkpoint,
     pub finalized_checkpoint: Checkpoint,
+}
+
+impl<C: Config> Default for BeaconState<C> {
+    fn default() -> Self {
+        Self {
+            block_roots: fixed_vector::default(),
+            state_roots: fixed_vector::default(),
+            randao_mixes: fixed_vector::default(),
+            slashings: fixed_vector::default(),
+
+            genesis_time: Default::default(),
+            slot: Default::default(),
+            fork: Default::default(),
+            latest_block_header: Default::default(),
+            historical_roots: Default::default(),
+            eth1_data: Default::default(),
+            eth1_data_votes: Default::default(),
+            eth1_deposit_index: Default::default(),
+            validators: Default::default(),
+            balances: Default::default(),
+            previous_epoch_attestations: Default::default(),
+            current_epoch_attestations: Default::default(),
+            justification_bits: Default::default(),
+            previous_justified_checkpoint: Default::default(),
+            current_justified_checkpoint: Default::default(),
+            finalized_checkpoint: Default::default(),
+        }
+    }
 }

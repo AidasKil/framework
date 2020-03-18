@@ -6,11 +6,13 @@ install_dependencies_on_debian() {
         bash        \
         git         \
         moreutils   \
-        pipexec     \
-        ruby
+        pipexec
 }
 
 set -o errexit
+set -o noclobber
+set -o noglob
+set -o nounset
 
 readonly LIBP2P_PORT=9000
 readonly LIGHTHOUSE_LIBP2P_PORT=9001
@@ -18,22 +20,19 @@ readonly LIGHTHOUSE_HTTP_PORT=9002
 readonly FIRST_VALIDATOR=0
 readonly VALIDATOR_COUNT=64
 
-readonly script_dir="$(dirname "$0")"
-readonly lighthouse_dir="$script_dir"/../lighthouse
+readonly project_dir="$(dirname "$0")"/..
+readonly lighthouse_dir="$project_dir"/lighthouse
 readonly genesis_time="$(date +%s)"
 
-genesis_state() {
-    exec erb genesis_time="$genesis_time" "$script_dir"/interop_minimal_genesis_state.yaml.erb
-}
-
 beacon_node() {
-    exec cargo run                                  \
-        --manifest-path "$script_dir"/../Cargo.toml \
-        --release                                   \
-        --                                          \
+    exec cargo run                                \
+        --manifest-path "$project_dir"/Cargo.toml \
+        --release                                 \
+        --                                        \
         "
             preset: Minimal
-            genesis_state_path: "<(genesis_state)"
+            genesis_time: $genesis_time
+            validator_count: $VALIDATOR_COUNT
             network_dir: /tmp/beacon_node
             libp2p_port: $LIBP2P_PORT
             discovery_port: $LIBP2P_PORT

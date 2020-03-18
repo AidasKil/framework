@@ -1,15 +1,13 @@
-use std::{env, fs::File, process};
+use std::{env, process};
 
 use anyhow::Result;
 use eth2_network_libp2p::Qutex;
 use futures::{Future as _, Stream as _};
+use helper_functions::misc;
 use log::{error, Level};
 use serde::de::DeserializeOwned;
 use tokio::runtime::current_thread;
-use types::{
-    beacon_state::BeaconState,
-    config::{Config, MainnetConfig, MinimalConfig},
-};
+use types::config::{Config, MainnetConfig, MinimalConfig};
 
 use crate::{
     node::Node,
@@ -17,7 +15,11 @@ use crate::{
     slot_timer::Tick,
 };
 
+mod deposit_tree;
 mod fake_time;
+mod genesis;
+mod hashing;
+mod interop;
 mod node;
 mod runtime_config;
 mod slot_timer;
@@ -33,16 +35,16 @@ fn main() {
 fn parse_args_and_run_node() -> Result<()> {
     // `<Args as Iterator>::next` will panic if any of the arguments are not valid `String`s.
     let config = RuntimeConfig::parse(env::args())?;
-    match config.preset {
-        Preset::Mainnet => run_node::<MainnetConfig>(config),
-        Preset::Minimal => run_node::<MinimalConfig>(config),
-    }
+    let instantiated = match config.preset {
+        Preset::Mainnet => run_node::<MainnetConfig>,
+        Preset::Minimal => run_node::<MinimalConfig>,
+    };
+    instantiated(&config)
 }
 
-fn run_node<C: Config + DeserializeOwned>(config: RuntimeConfig) -> Result<()> {
-    let genesis_state_file = File::open(config.genesis_state_path)?;
-    let genesis_state: BeaconState<C> = serde_yaml::from_reader(genesis_state_file)?;
-    let genesis_time = genesis_state.genesis_time;
+fn run_node<C: Config + DeserializeOwned>(config: &RuntimeConfig) -> Result<()> {
+    let genesis_state =
+        interop::quick_start_state::<C>(config.genesis_time, config.validator_count)?;
 
     // In previous versions, `Node` would consume an `Iterator` of inputs and produce an `Iterator`
     // of outputs. This approach required no explicit synchronization, but made abstracting over
@@ -63,18 +65,20 @@ fn run_node<C: Config + DeserializeOwned>(config: RuntimeConfig) -> Result<()> {
     let (_, receiver) = eth2_network_libp2p::channel();
     let run_network = eth2_network_libp2p::run_network(&config.network, qutex.clone(), receiver)?;
 
-    let tick_stream = slot_timer::start::<C>(genesis_time)?;
+    let tick_stream = slot_timer::start::<C>(config.genesis_time)?;
     let handle_ticks = tick_stream
         .filter_map(|tick| match tick {
             Tick(slot, responsibility) if responsibility.is_slot_start() => Some(slot),
             _ => None,
         })
         .for_each(|slot| {
-            qutex
-                .clone()
-                .lock()
-                .from_err()
-                .and_then(move |mut node| node.handle_slot_start(slot))
+            qutex.clone().lock().from_err().and_then(move |mut node| {
+                let head_state = node.head_state()?;
+                let epoch = misc::compute_epoch_at_slot::<C>(slot);
+                let eth1_data = interop::eth1_data_stub(head_state, epoch);
+                node.handle_eth1_data(eth1_data);
+                node.handle_slot_start(slot)
+            })
         });
 
     let run_node = run_network.join(handle_ticks).map(|_| ());
