@@ -356,6 +356,7 @@ mod scessing_tests {
 mod spec_tests {
     use std::panic::UnwindSafe;
 
+    use spec_test_utils::{BlsSetting, Case};
     use ssz_new::SszDecode;
     use test_generator::test_resources;
     use types::{beacon_state::BeaconState, config::MinimalConfig};
@@ -375,21 +376,20 @@ mod spec_tests {
                 use super::*;
 
                 #[test_resources($mainnet_glob)]
-                fn mainnet(case_directory: &str) {
-                    run_case_specialized::<MainnetConfig>(case_directory);
+                fn mainnet(case: Case) {
+                    run_case_specialized::<MainnetConfig>(case);
                 }
 
                 #[test_resources($minimal_glob)]
-                fn minimal(case_directory: &str) {
-                    run_case_specialized::<MinimalConfig>(case_directory);
+                fn minimal(case: Case) {
+                    run_case_specialized::<MinimalConfig>(case);
                 }
 
-                fn run_case_specialized<C: Config>(case_directory: &str) {
-                    run_case::<C, _, _>(
-                        case_directory,
-                        stringify!($operation_name),
-                        |state, operation| $processing_function(case_directory, state, operation),
-                    );
+                fn run_case_specialized<C: Config>(case: Case) {
+                    let bls_setting = case.meta().bls_setting;
+                    run_case::<C, _, _>(case, stringify!($operation_name), |state, operation| {
+                        $processing_function(bls_setting, state, operation)
+                    });
                 }
             }
         };
@@ -398,29 +398,29 @@ mod spec_tests {
     tests_for_operation! {
         // Test files for `block_header` are named `block.*` and contain `BeaconBlock`s.
         block,
-        ignore_case_directory(process_block_header),
+        ignore_bls_setting(process_block_header),
         "eth2.0-spec-tests/tests/mainnet/phase0/operations/block_header/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/operations/block_header/*/*",
     }
 
     tests_for_operation! {
         proposer_slashing,
-        ignore_case_directory(process_proposer_slashing),
+        ignore_bls_setting(process_proposer_slashing),
         "eth2.0-spec-tests/tests/mainnet/phase0/operations/proposer_slashing/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/operations/proposer_slashing/*/*",
     }
 
     tests_for_operation! {
         attester_slashing,
-        ignore_case_directory(process_attester_slashing),
+        ignore_bls_setting(process_attester_slashing),
         "eth2.0-spec-tests/tests/mainnet/phase0/operations/attester_slashing/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/operations/attester_slashing/*/*",
     }
 
     tests_for_operation! {
         attestation,
-        |case_directory, state, attestation| {
-            let verify_signature = spec_test_utils::bls_setting(case_directory).unwrap_or(true);
+        |bls_setting, state, attestation| {
+            let verify_signature = bls_setting != BlsSetting::Ignored;
             process_attestation(state, attestation, verify_signature)
         },
         "eth2.0-spec-tests/tests/mainnet/phase0/operations/attestation/*/*",
@@ -429,37 +429,37 @@ mod spec_tests {
 
     tests_for_operation! {
         deposit,
-        ignore_case_directory(process_deposit),
+        ignore_bls_setting(process_deposit),
         "eth2.0-spec-tests/tests/mainnet/phase0/operations/deposit/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/operations/deposit/*/*",
     }
 
     tests_for_operation! {
         voluntary_exit,
-        ignore_case_directory(process_voluntary_exit),
+        ignore_bls_setting(process_voluntary_exit),
         "eth2.0-spec-tests/tests/mainnet/phase0/operations/voluntary_exit/*/*",
         "eth2.0-spec-tests/tests/minimal/phase0/operations/voluntary_exit/*/*",
     }
 
-    fn ignore_case_directory<T, U, V>(
+    fn ignore_bls_setting<T, U, V>(
         processing_function: impl FnOnce(&mut U, &V),
     ) -> impl FnOnce(T, &mut U, &V) {
         |_, state, operation| processing_function(state, operation)
     }
 
-    fn run_case<C, D, F>(case_directory: &str, operation_name: &str, processing_function: F)
+    fn run_case<C, D, F>(case: Case, operation_name: &str, processing_function: F)
     where
         C: Config,
         D: SszDecode,
         F: FnOnce(&mut BeaconState<C>, &D) + UnwindSafe,
     {
         let process_operation = || {
-            let mut state = spec_test_utils::pre(case_directory);
-            let operation = spec_test_utils::operation(case_directory, operation_name);
+            let mut state = case.ssz("pre");
+            let operation = case.ssz(operation_name);
             processing_function(&mut state, &operation);
             state
         };
-        match spec_test_utils::post(case_directory) {
+        match case.try_ssz("post") {
             Some(expected_post) => assert_eq!(process_operation(), expected_post),
             // The state transition code as it is now panics on error instead of returning `Result`.
             // We have to use `std::panic::catch_unwind` to verify that state transitions fail.

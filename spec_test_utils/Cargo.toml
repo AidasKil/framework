@@ -5,7 +5,6 @@ edition = '2018'
 
 [dependencies]
 ssz_new = { path = '../utils/ssz_new' }
-ethereum-types = '0.8.0'
 serde = { version = '1.0', features = ['derive']}
 serde_repr = '0.1.5'
 serde_yaml = '0.8.11'

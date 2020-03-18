@@ -257,11 +257,11 @@ fn process_final_updates<T: Config>(state: &mut BeaconState<T>) {
 
 #[cfg(test)]
 mod spec_tests {
-    use core::fmt::Debug;
+    use core::{convert::Infallible, fmt::Debug};
 
+    use spec_test_utils::Case;
     use test_generator::test_resources;
     use types::{beacon_state::BeaconState, config::MinimalConfig};
-    use void::Void;
 
     use super::*;
 
@@ -278,13 +278,13 @@ mod spec_tests {
                 use super::*;
 
                 #[test_resources($mainnet_glob)]
-                fn mainnet(case_directory: &str) {
-                    run_case::<MainnetConfig, _, _>(case_directory, $sub_transition);
+                fn mainnet(case: Case) {
+                    run_case::<MainnetConfig, _, _>(case, $sub_transition);
                 }
 
                 #[test_resources($minimal_glob)]
-                fn minimal(case_directory: &str) {
-                    run_case::<MinimalConfig, _, _>(case_directory, $sub_transition);
+                fn minimal(case: Case) {
+                    run_case::<MinimalConfig, _, _>(case, $sub_transition);
                 }
             }
         };
@@ -301,8 +301,8 @@ mod spec_tests {
     #[test_resources(
         "eth2.0-spec-tests/tests/minimal/phase0/epoch_processing/rewards_and_penalties/*/*"
     )]
-    fn minimal_rewards_and_penalties(case_directory: &str) {
-        run_case::<MinimalConfig, _, _>(case_directory, process_rewards_and_penalties);
+    fn minimal_rewards_and_penalties(case: Case) {
+        run_case::<MinimalConfig, _, _>(case, process_rewards_and_penalties);
     }
 
     tests_for_sub_transition! {
@@ -328,21 +328,21 @@ mod spec_tests {
 
     fn wrap_in_ok<T>(
         infallible_function: impl FnOnce(&mut T),
-    ) -> impl FnOnce(&mut T) -> Result<(), Void> {
+    ) -> impl FnOnce(&mut T) -> Result<(), Infallible> {
         |argument| Ok(infallible_function(argument))
     }
 
-    fn run_case<C, E, F>(case_directory: &str, sub_transition: F)
+    fn run_case<C, E, F>(case: Case, sub_transition: F)
     where
         C: Config,
         E: Debug,
         F: FnOnce(&mut BeaconState<C>) -> Result<(), E>,
     {
-        let mut state = spec_test_utils::pre(case_directory);
-        let expected_post = spec_test_utils::post(case_directory)
-            .expect("every epoch processing test should have a post-state");
+        let mut state = case.ssz("pre");
+        let expected_post = case.ssz("post");
 
-        sub_transition(&mut state).expect("every epoch processing test should succeed");
+        sub_transition(&mut state)
+            .expect("every epoch processing test should perform processing successfully");
 
         assert_eq!(state, expected_post);
     }

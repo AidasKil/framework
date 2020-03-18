@@ -147,6 +147,7 @@ mod process_slot_tests {
 
 #[cfg(test)]
 mod spec_tests {
+    use spec_test_utils::Case;
     use test_generator::test_resources;
     use types::config::MinimalConfig;
 
@@ -155,45 +156,45 @@ mod spec_tests {
     // We do not honor `bls_setting` in sanity tests because none of them customize it.
 
     #[test_resources("eth2.0-spec-tests/tests/mainnet/phase0/sanity/slots/*/*")]
-    fn mainnet_slots(case_directory: &str) {
-        run_slots_case::<MainnetConfig>(case_directory);
+    fn mainnet_slots(case: Case) {
+        run_slots_case::<MainnetConfig>(case);
     }
 
     #[test_resources("eth2.0-spec-tests/tests/minimal/phase0/sanity/slots/*/*")]
-    fn minimal_slots(case_directory: &str) {
-        run_slots_case::<MinimalConfig>(case_directory);
+    fn minimal_slots(case: Case) {
+        run_slots_case::<MinimalConfig>(case);
     }
 
     #[test_resources("eth2.0-spec-tests/tests/mainnet/phase0/sanity/blocks/*/*")]
-    fn mainnet_blocks(case_directory: &str) {
-        run_blocks_case::<MainnetConfig>(case_directory);
+    fn mainnet_blocks(case: Case) {
+        run_blocks_case::<MainnetConfig>(case);
     }
 
     #[test_resources("eth2.0-spec-tests/tests/minimal/phase0/sanity/blocks/*/*")]
-    fn minimal_blocks(case_directory: &str) {
-        run_blocks_case::<MinimalConfig>(case_directory);
+    fn minimal_blocks(case: Case) {
+        run_blocks_case::<MinimalConfig>(case);
     }
 
-    fn run_slots_case<C: Config>(case_directory: &str) {
-        let mut state: BeaconState<C> = spec_test_utils::pre(case_directory);
-        let last_slot = state.slot + spec_test_utils::slots(case_directory);
-        let expected_post = spec_test_utils::post(case_directory)
-            .expect("every slot sanity test should have a post-state");
+    fn run_slots_case<C: Config>(case: Case) {
+        let mut state: BeaconState<C> = case.ssz("pre");
+        let slots: Slot = case.yaml("slots");
+        let last_slot = state.slot + slots;
+        let expected_post = case.ssz("post");
 
         process_slots(&mut state, last_slot);
 
         assert_eq!(state, expected_post);
     }
 
-    fn run_blocks_case<C: Config>(case_directory: &str) {
+    fn run_blocks_case<C: Config>(case: Case) {
         let process_blocks = || {
-            let mut state = spec_test_utils::pre(case_directory);
-            for block in spec_test_utils::blocks(case_directory) {
+            let mut state = case.ssz("pre");
+            for block in case.iterator("blocks", case.meta().blocks_count) {
                 state_transition::<C>(&mut state, &block, true);
             }
             state
         };
-        match spec_test_utils::post(case_directory) {
+        match case.try_ssz("post") {
             Some(expected_post) => assert_eq!(process_blocks(), expected_post),
             // The state transition code as it is now panics on error instead of returning `Result`.
             // We have to use `std::panic::catch_unwind` to verify that state transitions fail.

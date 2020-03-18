@@ -15,15 +15,24 @@ pub use crate::beacon_state::{Error as BeaconStateError, *};
 mod spec_tests {
     use core::fmt::Debug;
 
-    use serde::de::DeserializeOwned;
+    use serde::{de::DeserializeOwned, Deserialize};
+    use spec_test_utils::Case;
     use ssz_new::{SszDecode, SszEncode};
     use test_generator::test_resources;
     use tree_hash::TreeHash;
 
-    use crate::config::{MainnetConfig, MinimalConfig};
+    use crate::{
+        config::{MainnetConfig, MinimalConfig},
+        primitives::H256,
+    };
 
     mod tested_types {
         pub use crate::{beacon_state::BeaconState, types::*};
+    }
+
+    #[derive(Deserialize)]
+    struct Roots {
+        root: H256,
     }
 
     macro_rules! tests_for_type {
@@ -36,13 +45,13 @@ mod spec_tests {
                 use super::*;
 
                 #[test_resources($mainnet_glob)]
-                fn mainnet(case_directory: &str) {
-                    run_case::<tested_types::$type$(<MainnetConfig $bracket)?>(case_directory);
+                fn mainnet(case: Case) {
+                    run_case::<tested_types::$type$(<MainnetConfig $bracket)?>(case);
                 }
 
                 #[test_resources($minimal_glob)]
-                fn minimal(case_directory: &str) {
-                    run_case::<tested_types::$type$(<MinimalConfig $bracket)?>(case_directory);
+                fn minimal(case: Case) {
+                    run_case::<tested_types::$type$(<MinimalConfig $bracket)?>(case);
                 }
             }
         };
@@ -189,21 +198,19 @@ mod spec_tests {
         "eth2.0-spec-tests/tests/minimal/phase0/ssz_static/VoluntaryExit/*/*",
     }
 
-    fn run_case<D>(case_directory: &str) -> D
+    fn run_case<D>(case: Case)
     where
         D: PartialEq + Debug + DeserializeOwned + SszDecode + SszEncode + TreeHash,
     {
-        let ssz_bytes = spec_test_utils::serialized(case_directory);
-        let yaml_value = spec_test_utils::value(case_directory);
-        let hash_tree_root = spec_test_utils::hash_tree_root(case_directory);
+        let ssz_bytes = case.bytes("serialized.ssz");
+        let yaml_value = case.yaml("value");
+        let Roots { root } = case.yaml("roots");
 
         let ssz_value = D::from_ssz_bytes(ssz_bytes.as_slice())
             .expect("the file should contain a value encoded in SSZ");
 
         assert_eq!(ssz_value, yaml_value);
         assert_eq!(ssz_bytes, yaml_value.as_ssz_bytes());
-        assert_eq!(yaml_value.tree_hash_root(), hash_tree_root);
-
-        yaml_value
+        assert_eq!(yaml_value.tree_hash_root(), root);
     }
 }
