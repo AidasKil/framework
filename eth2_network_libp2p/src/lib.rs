@@ -442,10 +442,9 @@ impl<C: Config, N: Networked<C>> EventHandler<C, N> {
         let request_id = self.request_id()?;
 
         Ok(Box::new(
-            self.lock_networked()
-                .join(self.lock_service())
-                .map(move |(networked, mut service)| {
-                    let status = networked.get_status();
+            self.lock_networked().join(self.lock_service()).and_then(
+                move |(networked, mut service)| {
+                    let status = networked.get_status()?;
 
                     info!(
                         "sending Status request (peer_id: {}, status: {:?})",
@@ -459,7 +458,10 @@ impl<C: Config, N: Networked<C>> EventHandler<C, N> {
                             RPCRequest::Status(status_into_status_message(status)),
                         ),
                     );
-                }),
+
+                    Ok(())
+                },
+            ),
         ))
     }
 
@@ -656,7 +658,7 @@ fn get_and_check_status<C: Config, N: Networked<C>>(
     networked: &N,
     remote: Status,
 ) -> Result<Status> {
-    let local = networked.get_status();
+    let local = networked.get_status()?;
     ensure!(
         local.fork_version == remote.fork_version,
         EventHandlerError::ForkVersionMismatch {

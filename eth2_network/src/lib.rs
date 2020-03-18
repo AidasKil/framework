@@ -38,7 +38,7 @@ pub trait Networked<C: Config>: 'static {
 
     fn accept_beacon_attestation(&mut self, attestation: Attestation<C>) -> Result<()>;
 
-    fn get_status(&self) -> Status;
+    fn get_status(&self) -> Result<Status>;
 
     fn get_beacon_block(&self, root: H256) -> Option<&SignedBeaconBlock<C>>;
 }

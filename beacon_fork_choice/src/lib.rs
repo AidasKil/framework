@@ -7,7 +7,7 @@
 
 #![allow(clippy::missing_errors_doc)]
 
-use core::{convert::TryInto as _, mem};
+use core::convert::TryFrom as _;
 use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{ensure, Result};
@@ -100,9 +100,9 @@ impl<C: Config> Store<C> {
         }
     }
 
-    #[must_use]
-    pub fn head_state(&self) -> &BeaconState<C> {
-        &self.block_states[&self.head()]
+    pub fn head_state(&self) -> Result<&BeaconState<C>> {
+        let head = self.head()?;
+        Ok(&self.block_states[&head])
     }
 
     #[must_use]
@@ -344,30 +344,26 @@ impl<C: Config> Store<C> {
     /// <https://github.com/ethereum/eth2.0-specs/blob/8201fb00249782528342a51434f6abcfc57b501f/specs/phase0/fork-choice.md#get_latest_attesting_balance>
     ///
     /// The extra `block` parameter is used to avoid a redundant block lookup.
-    fn latest_attesting_balance(&self, root: H256, block: &BeaconBlock<C>) -> Gwei {
+    fn latest_attesting_balance(&self, root: H256, block: &BeaconBlock<C>) -> Result<Gwei> {
         let justified_state = &self.checkpoint_states[&self.justified_checkpoint];
+
         let active_indices = beacon_state_accessors::get_active_validator_indices(
             justified_state,
             beacon_state_accessors::get_current_epoch(justified_state),
         );
 
-        active_indices
-            .into_iter()
-            .filter_map(|index| {
-                let latest_message = self.latest_messages.get(&index)?;
+        let mut sum = 0;
+
+        for index in active_indices {
+            if let Some(latest_message) = self.latest_messages.get(&index) {
                 if self.ancestor(latest_message.root, block.slot) == root {
-                    // The `Result::expect` call would be avoidable if there were a function like
-                    // `beacon_state_accessors::get_active_validator_indices` that returned
-                    // references to the validators in addition to their indices.
-                    let index: usize = index
-                        .try_into()
-                        .expect("validator index should fit in usize");
-                    Some(justified_state.validators[index].effective_balance)
-                } else {
-                    None
+                    let index = usize::try_from(index)?;
+                    sum += justified_state.validators[index].effective_balance;
                 }
-            })
-            .sum()
+            }
+        }
+
+        Ok(sum)
     }
 
     /// <https://github.com/ethereum/eth2.0-specs/blob/8201fb00249782528342a51434f6abcfc57b501f/specs/phase0/fork-choice.md#get_filtered_block_tree>
@@ -429,7 +425,7 @@ impl<C: Config> Store<C> {
     }
 
     /// <https://github.com/ethereum/eth2.0-specs/blob/8201fb00249782528342a51434f6abcfc57b501f/specs/phase0/fork-choice.md#get_head>
-    fn head(&self) -> H256 {
+    fn head(&self) -> Result<H256> {
         // > Get filtered block tree that only includes viable branches
         let blocks = self.filtered_block_tree();
 
@@ -438,22 +434,23 @@ impl<C: Config> Store<C> {
         let justified_slot = Self::start_of_epoch(self.justified_checkpoint.epoch);
 
         loop {
+            let children = blocks.iter().filter(|(_, signed_block)| {
+                let block = &signed_block.message;
+                block.parent_root == head && justified_slot < block.slot
+            });
+
             // > Sort by latest attesting balance with ties broken lexicographically
-            let child_with_plurality = blocks
-                .iter()
-                .filter_map(|(root, signed_block)| {
-                    let child = &signed_block.message;
-                    if child.parent_root == head && justified_slot < child.slot {
-                        Some((self.latest_attesting_balance(*root, child), *root))
-                    } else {
-                        None
-                    }
-                })
-                .max();
+            let mut child_with_plurality = None;
+
+            for (root, child) in children {
+                let balance = self.latest_attesting_balance(*root, &child.message)?;
+                let balance_with_tiebreaker = (balance, *root);
+                child_with_plurality = child_with_plurality.max(Some(balance_with_tiebreaker));
+            }
 
             match child_with_plurality {
                 Some((_, root)) => head = root,
-                None => break head,
+                None => break Ok(head),
             }
         }
     }
@@ -510,7 +507,7 @@ impl<C: Config> Store<C> {
 
     fn retry_delayed_until_slot(&mut self, slot: Slot) -> Result<()> {
         let later_slots = self.delayed_until_slot.split_off(&(slot + 1));
-        let fulfilled_slots = mem::replace(&mut self.delayed_until_slot, later_slots);
+        let fulfilled_slots = core::mem::replace(&mut self.delayed_until_slot, later_slots);
         for (_, objects) in fulfilled_slots {
             self.retry_delayed(objects)?;
         }

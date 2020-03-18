@@ -11,7 +11,7 @@ use types::{
     beacon_state::BeaconState,
     config::Config,
     primitives::{Slot, H256},
-    types::{Attestation, Checkpoint, SignedBeaconBlock},
+    types::{Attestation, SignedBeaconBlock},
 };
 
 pub struct Node<C: Config>(Store<C>);
@@ -46,16 +46,16 @@ impl<C: Config> Networked<C> for Node<C> {
         self.0.on_attestation(attestation)
     }
 
-    fn get_status(&self) -> Status {
-        let head_state = self.0.head_state();
-        let Checkpoint { epoch, root } = head_state.finalized_checkpoint;
-        Status {
+    fn get_status(&self) -> Result<Status> {
+        let head_state = self.0.head_state()?;
+        let status = Status {
             fork_version: head_state.fork.current_version,
-            finalized_root: root,
-            finalized_epoch: epoch,
+            finalized_root: head_state.finalized_checkpoint.root,
+            finalized_epoch: head_state.finalized_checkpoint.epoch,
             head_root: crypto::hash_tree_root(head_state),
             head_slot: head_state.slot,
-        }
+        };
+        Ok(status)
     }
 
     fn get_beacon_block(&self, root: H256) -> Option<&SignedBeaconBlock<C>> {
