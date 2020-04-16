@@ -10,7 +10,8 @@ members = [
     'transition_functions',
     'utils/ssz_new',
     'utils/ssz_new_derive',
-    'utils/bls'
+    'utils/bls',
+    'custody_game'
 ]
 
 [profile.release]

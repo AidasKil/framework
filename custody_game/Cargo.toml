@@ -1,0 +1,12 @@
+[package]
+name = "custody_game"
+version = "0.1.0"
+authors = ["Valdas Rakutis <valdas@rakutis.lt>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bls = { path = '../utils/bls' }
+types = { path = '../types' }
+transition_functions = { path = '../transition_functions' }

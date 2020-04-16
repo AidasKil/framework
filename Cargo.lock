@@ -609,6 +609,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "custody_game"
+version = "0.1.0"
+dependencies = [
+ "bls 0.1.0",
+ "transition_functions 0.1.0",
+ "types 0.1.0",
+]
+
+[[package]]
 name = "data-encoding"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
