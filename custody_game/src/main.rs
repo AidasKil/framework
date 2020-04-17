@@ -1,4 +1,3 @@
-mod cg_types;
 mod cg_consts;
 
 use anyhow::{ensure, Result};
@@ -6,14 +5,17 @@ use thiserror::Error;
 use bls::Signature;
 use types::primitives::{Epoch, ValidatorIndex};
 use crate::cg_consts::{EPOCHS_PER_CUSTODY_PERIOD, CUSTODY_PERIOD_TO_RANDAO_PADDING};
+use types::BeaconState;
+use types::config::Config;
+use types::types::{BeaconBlockBody, CustodySlashing};
 
 fn main() {
-    let slashing = cg_types::CustodySlashing{
+    /*let slashing = CustodySlashing{
         data_index: 0,
         malefactor_index: 0,
         whistleblower_index: 0,
         data: vec![0; 1024]
-    };
+    };*/
 }
 
 
@@ -88,4 +90,19 @@ pub fn get_randao_epoch_for_custody_period(period: u64, validator_index: Validat
 
 pub fn get_custody_period_for_validator(validator_index: ValidatorIndex, epoch: Epoch) -> u64{
     return (epoch + validator_index % EPOCHS_PER_CUSTODY_PERIOD) / EPOCHS_PER_CUSTODY_PERIOD;
+}
+
+//per-block processing
+
+pub fn process_custody_game_operations<C: Config>(state: &BeaconState<C>, body: &BeaconBlockBody<C>) -> Result<()> {
+    for reveal in body.custody_key_reveals {
+        process_custody_key_reveal(reveal);
+    }
+    for reveal in body.early_derived_secret_reveals {
+        process_early_derived_secret_reveal(reveal);
+    }
+    for slashing in body.custody_slashings {
+        process_custody_slashing(slashing);
+    }
+    return Ok(());
 }

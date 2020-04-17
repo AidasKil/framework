@@ -9,6 +9,7 @@ pub mod fixed_vector;
 pub mod helper_functions_types;
 pub mod primitives;
 pub mod types;
+pub mod custody_game_types;
 
 pub use crate::beacon_state::{Error as BeaconStateError, *};
 

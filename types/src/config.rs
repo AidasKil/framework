@@ -155,7 +155,6 @@ where
         + Ord
         + Default
         + Debug;
-
     type MaxAttestationsPerEpoch: Unsigned
         + Clone
         + Copy
@@ -167,6 +166,26 @@ where
         + Default
         + Debug;
     type ThirdOfSlot: Unsigned + NonZero;
+    type MaxShardBlockSize: Unsigned
+        + Clone
+        + Copy
+        + PartialEq
+        + Eq
+        + Hash
+        + PartialOrd
+        + Ord
+        + Default
+        + Debug;
+    type EarlyDerivedSecretRevealMaskSize: Unsigned
+        + Clone
+        + Copy
+        + PartialEq
+        + Eq
+        + Hash
+        + PartialOrd
+        + Ord
+        + Default
+        + Debug;
 
     fn base_reward_factor() -> u64 {
         64
@@ -296,6 +315,9 @@ impl Config for MainnetConfig {
 
     type MaxAttestationsPerEpoch = Prod<Self::MaxAttestations, Self::SlotsPerEpoch>;
     type ThirdOfSlot = typenum::U4;
+
+    type MaxShardBlockSize = typenum::U1048576;
+    type EarlyDerivedSecretRevealMaskSize = typenum::U32;
 }
 
 #[derive(
@@ -320,6 +342,9 @@ impl Config for MinimalConfig {
 
     type MaxAttestationsPerEpoch = Prod<Self::MaxAttestations, Self::SlotsPerEpoch>;
     type ThirdOfSlot = typenum::U2;
+
+    type MaxShardBlockSize = typenum::U1048576;
+    type EarlyDerivedSecretRevealMaskSize = typenum::U32;
 
     fn genesis_fork_version() -> Version {
         hex!("00000001").into()
