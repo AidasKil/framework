@@ -2,7 +2,9 @@ use bls::{Signature};
 use types::primitives::{Epoch, ValidatorIndex};
 use types::types::Attestation;
 
-#[derive(Clone, Copy)]
+//TODO: define
+pub const MAX_SHARD_BLOCK_SIZE: u32 = 1024;
+
 pub struct CustodySlashing{
     //Attestation.custody_bits_blocks[data_index][committee.index(malefactor_index)] is the target custody bit to check.
     pub data_index: u64,
@@ -12,7 +14,7 @@ pub struct CustodySlashing{
     //(Attestation.data.shard_transition_root as ShardTransition).shard_data_roots[data_index] is the root of the data.
     //pub shard_transition: ShardTransition TODO: can't find this, prob eth2.0 thing
     //pub attestation: Attestation,
-    //pub data: ByteList[MAX_SHARD_BLOCK_SIZE], probably byte[size]
+    pub data: Vec<i8> //size should be MAX_SHARD_BLOCK_SIZE
 }
 
 pub struct SignedCustodySlashing{
