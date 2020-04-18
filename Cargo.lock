@@ -614,6 +614,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow 1.0.28 (registry+https://github.com/rust-lang/crates.io-index)",
  "bls 0.1.0",
+ "helper_functions 0.1.0",
  "thiserror 1.0.14 (registry+https://github.com/rust-lang/crates.io-index)",
  "transition_functions 0.1.0",
  "types 0.1.0",

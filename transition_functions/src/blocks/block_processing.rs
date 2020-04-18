@@ -17,6 +17,11 @@ use types::{
     config::{Config, MainnetConfig},
     types::VoluntaryExit,
 };
+use types::custody_game_types::CustodyKeyReveal;
+use types::primitives::{ValidatorIndex, Epoch};
+use crate::rewards_and_penalties::*;
+use std::thread::current;
+use crate::rewards_and_penalties::rewards_and_penalties::StakeholderBlock;
 
 pub fn process_block<T: Config>(state: &mut BeaconState<T>, block: &BeaconBlock<T>) {
     process_block_header(state, &block);
@@ -120,9 +125,63 @@ pub fn process_deposit<T: Config>(state: &mut BeaconState<T>, deposit: &Deposit)
                 T::max_effective_balance(),
             ),
             slashed: false,
+            //TODO:
+            next_custody_secret_to_reveal: get_previous_epoch(state),
+            max_reveal_lateness: u64::default()
         })
         .unwrap();
     &state.balances.push(*amount);
+}
+
+fn process_custody_key_reveal<T: Config>(state: &mut BeaconState<T>, reveal: &CustodyKeyReveal) {
+    let revealer = & state.validators[reveal.revealer_index as usize];
+
+    let current_epoch = get_current_epoch(state);
+
+    let epoch_to_sign = get_randao_epoch_for_custody_period(revealer.next_custody_secret_to_reveal, reveal.revealer_index);
+
+    let custody_reveal_period = get_custody_period_for_validator(reveal.revealer_index, current_epoch);
+
+    assert!(revealer.next_custody_secret_to_reveal < custody_reveal_period);
+    assert!(is_slashable_validator(revealer, current_epoch));
+
+    let domain = get_domain(state, T::domain_randao(), Option::from(epoch_to_sign));
+
+    let signing_root = compute_signing_root(&epoch_to_sign, domain);
+    assert!(bls_verify(&revealer.pubkey, &signing_root.0, &reveal.reveal).unwrap());
+
+    let new_max_lateness =
+        if epoch_to_sign + EPOCHS_PER_CUSTODY_PERIOD >= current_epoch
+        {
+            if revealer.max_reveal_lateness >= MAX_REVEAL_LATENESS_DECREMENT
+            { revealer.max_reveal_lateness - MAX_REVEAL_LATENESS_DECREMENT }
+            else { 0 }
+        }
+        else
+        { std::cmp::max(revealer.max_reveal_lateness, current_epoch - epoch_to_sign - EPOCHS_PER_CUSTODY_PERIOD)  };
+
+    //borrow
+    let revealer = &mut state.validators[reveal.revealer_index as usize];
+    revealer.max_reveal_lateness = new_max_lateness;
+    revealer.next_custody_secret_to_reveal += 1;
+
+    let proposer_index = get_beacon_proposer_index(state).unwrap();
+    increase_balance(
+        state,
+        ValidatorIndex::from(proposer_index),
+        state.get_base_reward(reveal.revealer_index) / MINOR_REWARD_QUOTIENT
+    );
+}
+
+//TODO Config? Constants
+fn get_randao_epoch_for_custody_period(period: u64, validator_index: ValidatorIndex) -> Epoch {
+    let next_period_start = (period + 1) * (EPOCHS_PER_CUSTODY_PERIOD) - validator_index % EPOCHS_PER_CUSTODY_PERIOD;
+    let epoch = Epoch::from(next_period_start + CUSTODY_PERIOD_TO_RANDAO_PADDING);
+    return epoch;
+}
+
+pub fn get_custody_period_for_validator(validator_index: ValidatorIndex, epoch: Epoch) -> u64 {
+    return (epoch + validator_index % EPOCHS_PER_CUSTODY_PERIOD) / EPOCHS_PER_CUSTODY_PERIOD;
 }
 
 fn process_block_header<T: Config>(state: &mut BeaconState<T>, block: &BeaconBlock<T>) {

@@ -9,7 +9,7 @@ pub const RANDAO_PENALTY_EPOCHS: u32 = 2;                            //12.8min
 pub const EARLY_DERIVED_SECRET_PENALTY_MAX_FUTURE_EPOCHS: u32 = 16384;  //~73days
 pub const EPOCHS_PER_CUSTODY_PERIOD: u64 = 2048;                       //~9days
 pub const CUSTODY_PERIOD_TO_RANDAO_PADDING: u64 = 2048;                 //~9days
-pub const MAX_REVEAL_LATENESS_DECREMENT: u32 = 128;                    //~14hours
+pub const MAX_REVEAL_LATENESS_DECREMENT: u64 = 128;                    //~14hours
 
 // Max Operations per block
 pub const MAX_CUSTODY_KEY_REVEALS: u32 = 256;

@@ -9,6 +9,7 @@ use tree_hash_derive::TreeHash;
 use typenum::{Sum, U1};
 
 use crate::{config::Config, primitives::*};
+use crate::custody_game_types::{CustodyKeyReveal, EarlyDerivedSecretReveal, CustodySlashing};
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize, SszEncode, SszDecode, TreeHash)]
 pub struct Attestation<C: Config> {
@@ -64,6 +65,11 @@ pub struct BeaconBlockBody<C: Config> {
     pub attestations: VariableList<Attestation<C>, C::MaxAttestations>,
     pub deposits: VariableList<Deposit, C::MaxDeposits>,
     pub voluntary_exits: VariableList<SignedVoluntaryExit, C::MaxVoluntaryExits>,
+
+    //Custody Game TODO: limits
+    pub custody_key_reveals: VariableList<CustodyKeyReveal,typenum::U32>,
+    pub early_derived_secret_reveals: VariableList<EarlyDerivedSecretReveal<C>, typenum::U32>,
+    pub custody_slashings: VariableList<CustodySlashing<C>, typenum::U32>
 }
 
 impl<C: Config> Default for BeaconBlockBody<C> {
@@ -77,6 +83,9 @@ impl<C: Config> Default for BeaconBlockBody<C> {
             attestations: Default::default(),
             deposits: Default::default(),
             voluntary_exits: Default::default(),
+            custody_key_reveals: Default::default(),
+            early_derived_secret_reveals: Default::default(),
+            custody_slashings: Default::default()
         }
     }
 }
@@ -259,6 +268,8 @@ pub struct Validator {
     pub activation_epoch: Epoch,
     pub exit_epoch: Epoch,
     pub withdrawable_epoch: Epoch,
+    pub next_custody_secret_to_reveal: u64,
+    pub max_reveal_lateness: u64,
 }
 
 impl Default for Validator {
@@ -272,6 +283,8 @@ impl Default for Validator {
             activation_epoch: Default::default(),
             exit_epoch: Default::default(),
             withdrawable_epoch: Default::default(),
+            next_custody_secret_to_reveal: Default::default(),
+            max_reveal_lateness: Default::default(),
         }
     }
 }

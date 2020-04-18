@@ -3,11 +3,18 @@ mod cg_consts;
 use anyhow::{ensure, Result};
 use thiserror::Error;
 use bls::Signature;
-use types::primitives::{Epoch, ValidatorIndex};
-use crate::cg_consts::{EPOCHS_PER_CUSTODY_PERIOD, CUSTODY_PERIOD_TO_RANDAO_PADDING};
+use types::primitives::{Epoch, ValidatorIndex, H256};
+use crate::cg_consts::{EPOCHS_PER_CUSTODY_PERIOD, CUSTODY_PERIOD_TO_RANDAO_PADDING, MAX_REVEAL_LATENESS_DECREMENT};
 use types::BeaconState;
 use types::config::Config;
-use types::types::{BeaconBlockBody, CustodySlashing};
+use types::types::{BeaconBlockBody, Validator};
+use types::custody_game_types::{CustodyKeyReveal, CustodySlashing};
+use helper_functions::beacon_state_accessors;
+use helper_functions::beacon_state_mutators;
+use helper_functions::beacon_state_accessors::get_current_epoch;
+use helper_functions::predicates::{ is_slashable_validator };
+use helper_functions::misc::{ compute_signing_root };
+use helper_functions::crypto::bls_verify;
 
 fn main() {
     /*let slashing = CustodySlashing{
@@ -23,7 +30,11 @@ fn main() {
 #[derive(Error, Debug)]
 enum Error{
     #[error("Bad values passed to 'legendre_bit'")]
-    BadArgsForLegendreBit
+    BadArgsForLegendreBit,
+    #[error("Revealing custody secret too early")]
+    RevealingCustodySecretTooEarly,
+    #[error("Can't slash the custody key revealer")]
+    UnslashableCustodyKeyRevealer
 }
 
 pub fn legendre_bit(a: i32, q: i32) -> Result<i32> {
@@ -41,7 +52,7 @@ pub fn legendre_bit(a: i32, q: i32) -> Result<i32> {
     while m != 0 {
         while m % 2 == 0 {
             m = m / 2;
-            let mut r = n % 8;
+            let r = n % 8;
             if r == 3 || r == 5 {
                 t = -t;
             }
@@ -82,19 +93,11 @@ pub fn compute_custody_bit(key: Signature, bytes: &Vec<u8>) -> Result<u8> {
     return Ok(1);
 }
 
-pub fn get_randao_epoch_for_custody_period(period: u64, validator_index: ValidatorIndex) -> Epoch {
-    let next_period_start = (period + 1) * (EPOCHS_PER_CUSTODY_PERIOD) - validator_index % EPOCHS_PER_CUSTODY_PERIOD;
-    let epoch = Epoch::from(next_period_start + CUSTODY_PERIOD_TO_RANDAO_PADDING);
-    return epoch;
-}
-
-pub fn get_custody_period_for_validator(validator_index: ValidatorIndex, epoch: Epoch) -> u64{
-    return (epoch + validator_index % EPOCHS_PER_CUSTODY_PERIOD) / EPOCHS_PER_CUSTODY_PERIOD;
-}
 
 //per-block processing
 
-pub fn process_custody_game_operations<C: Config>(state: &BeaconState<C>, body: &BeaconBlockBody<C>) -> Result<()> {
+//TODO:
+/*pub fn process_custody_game_operations<C: Config>(state: &BeaconState<C>, body: &BeaconBlockBody<C>) -> Result<()> {
     for reveal in body.custody_key_reveals {
         process_custody_key_reveal(reveal);
     }
@@ -105,4 +108,4 @@ pub fn process_custody_game_operations<C: Config>(state: &BeaconState<C>, body: 
         process_custody_slashing(slashing);
     }
     return Ok(());
-}
+}*/

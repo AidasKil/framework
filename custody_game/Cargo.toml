@@ -12,3 +12,4 @@ thiserror = '1.0.9'
 bls = { path = '../utils/bls' }
 types = { path = '../types' }
 transition_functions = { path = '../transition_functions' }
+helper_functions = '0.1.0'
