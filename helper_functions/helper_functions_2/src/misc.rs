@@ -11,6 +11,7 @@ use types::config::Config;
 use types::helper_functions_types::Error;
 use types::primitives::{Domain, DomainType, Epoch, Slot, ValidatorIndex, Version, H256};
 use types::types::SigningRoot;
+use types::consts::{EPOCHS_PER_CUSTODY_PERIOD, CUSTODY_PERIOD_TO_RANDAO_PADDING};
 
 pub fn compute_epoch_at_slot<C: Config>(slot: Slot) -> Epoch {
     slot / C::SlotsPerEpoch::to_u64()
@@ -161,6 +162,16 @@ pub fn compute_committee<'a, C: Config>(
         );
     }
     Ok(committee_vec)
+}
+
+pub fn get_randao_epoch_for_custody_period(period: u64, validator_index: ValidatorIndex) -> Epoch {
+    let next_period_start = (period + 1) * (EPOCHS_PER_CUSTODY_PERIOD) - validator_index % EPOCHS_PER_CUSTODY_PERIOD;
+    let epoch = Epoch::from(next_period_start + CUSTODY_PERIOD_TO_RANDAO_PADDING);
+    return epoch;
+}
+
+pub fn get_custody_period_for_validator(validator_index: ValidatorIndex, epoch: Epoch) -> u64 {
+    return (epoch + validator_index % EPOCHS_PER_CUSTODY_PERIOD) / EPOCHS_PER_CUSTODY_PERIOD;
 }
 
 #[cfg(test)]

@@ -19,4 +19,5 @@ pub enum Error {
     SignatureConversionError,
 
     SszDecode(SszDecodeError),
+    BadArgsForLegendreBit,
 }

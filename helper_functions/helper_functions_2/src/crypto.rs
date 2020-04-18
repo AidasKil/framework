@@ -7,6 +7,8 @@ use ssz_new::SszDecodeError;
 use std::convert::TryInto;
 use tree_hash::TreeHash;
 use types::primitives::H256;
+use types::helper_functions_types::Error::BadArgsForLegendreBit;
+use types::consts;
 
 pub fn hash(input: &[u8]) -> Vec<u8> {
     digest(&SHA256, input).as_ref().into()
@@ -49,6 +51,65 @@ pub fn bls_aggregate_pubkeys(pubkeys: &[PublicKey]) -> AggregatePublicKey {
 
 pub fn hash_tree_root<T: TreeHash>(object: &T) -> H256 {
     object.tree_hash_root()
+}
+
+pub fn legendre_bit(a: i32, q: i32) -> Result<i32, types::helper_functions_types::Error> {
+    if a >= q {
+        return legendre_bit(a % q, q);
+    }
+    if a == 0 {
+        return Ok(0);
+    }
+    if !((q > a) && (a > 0) && q % 2 == 1){
+        return Err(types::helper_functions_types::Error::BadArgsForLegendreBit);
+    }
+
+    let mut t: i32 = 1;
+    let mut n: i32 = q;
+    let mut m: i32 = a;
+    while m != 0 {
+        while m % 2 == 0 {
+            m = m / 2;
+            let r = n % 8;
+            if r == 3 || r == 5 {
+                t = -t;
+            }
+        }
+        let temp = m;
+        m = n;
+        n = temp;
+        if (m % 4 == n % 4) && (m % 4 == 3 && n % 4 == 3) {
+            t = -t;
+        }
+        m %= n;
+    }
+    if n == 1 {
+        return Ok((t + 1) / 2);
+    }
+    return Ok(0);
+}
+
+
+fn get_custody_atoms(bytes: &Vec<u8>) -> Vec<u8>{
+    let to_pad = consts::BYTES_PER_CUSTODY_ATOM as usize - bytes.len();
+    let padding = vec![0 as u8; to_pad];
+
+    let mut result = bytes.to_vec();
+    result.extend(padding);
+    return result;
+}
+
+//TODO G2, also possible change of spec as per https://github.com/ethereum/eth2.0-specs/pull/1705/commits/ca6af0c2e9bfba1667ea7b6a67a03144be7aa23b
+pub fn compute_custody_bit(key: &SignatureBytes, bytes: &Vec<u8>) -> bool {
+    //TODO:
+    //full_G2_element = bls.signature_to_G2(key)
+    //s = full_G2_element[0].coeffs
+    let atoms = get_custody_atoms(bytes);
+    for (i, val) in atoms.iter().enumerate(){
+
+    }
+
+    return true;
 }
 
 #[cfg(test)]

@@ -53,3 +53,7 @@ pub fn compute_domain<C: Config>(
 ) -> Domain {
     0
 }
+
+
+pub fn get_randao_epoch_for_custody_period(period: u64, validator_index: ValidatorIndex) -> Epoch { 0 }
+pub fn get_custody_period_for_validator(validator_index: ValidatorIndex, epoch: Epoch) -> u64 { 0 }

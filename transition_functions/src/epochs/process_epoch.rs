@@ -21,13 +21,17 @@ use types::{
     config::{Config, MainnetConfig},
     types::{Checkpoint, PendingAttestation, Validator},
 };
+use helper_functions::misc::get_custody_period_for_validator;
+use types::fixed_vector::default;
 
 pub fn process_epoch<T: Config>(state: &mut BeaconState<T>) {
     process_justification_and_finalization(state);
     process_rewards_and_penalties(state);
     process_registry_updates(state);
+    process_reveal_deadlines(state);
     process_slashings(state);
     process_final_updates(state);
+    process_custody_final_updates(state);
 }
 
 fn process_justification_and_finalization<T: Config>(
@@ -154,6 +158,26 @@ fn process_registry_updates<T: Config>(state: &mut BeaconState<T>) {
             validator.activation_epoch = delayed_activation_epoch;
         }
     }
+}
+
+fn process_reveal_deadlines<T: Config>(state: &mut BeaconState<T>) {
+    let current_epoch = get_current_epoch(state);
+
+    let mut slashable_validators: Vec<ValidatorIndex> = Default::default();
+    for (index, validator) in state.validators.iter().enumerate() {
+        let index = index as ValidatorIndex;
+        if get_custody_period_for_validator(index, current_epoch) > validator.next_custody_secret_to_reveal {
+            slashable_validators.push(index);
+        }
+    }
+    for index in slashable_validators {
+        //slash_validator(state, index, Option::None);
+    }
+}
+
+fn process_custody_final_updates(state: &mut BeaconState<T>) {
+    let current_epoch = get_current_epoch(state);
+    state.exposed_derived_secrets[current_epoch % EARLY_DERIVED_SECRET_PENALTY_MAX_FUTURE_EPOCHS] = Default::default();
 }
 
 fn process_rewards_and_penalties<T: Config>(state: &mut BeaconState<T>) -> Result<(), Error> {

@@ -36,3 +36,5 @@ pub fn hash_tree_root<T: TreeHash>(object: &T) -> H256 {
         .expect("Incorrect Tree Hash Root");
     H256::from_slice(hash)
 }
+
+pub fn compute_custody_bit(key: &SignatureBytes, bytes: &Vec<u8>) -> bool { false }

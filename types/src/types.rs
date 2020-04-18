@@ -9,13 +9,15 @@ use tree_hash_derive::TreeHash;
 use typenum::{Sum, U1};
 
 use crate::{config::Config, primitives::*};
-use crate::custody_game_types::{CustodyKeyReveal, EarlyDerivedSecretReveal, CustodySlashing};
+use crate::custody_game_types::{CustodyKeyReveal, EarlyDerivedSecretReveal, CustodySlashing, SignedCustodySlashing};
+use crate::beacon_chain_types::Root;
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize, SszEncode, SszDecode, TreeHash)]
 pub struct Attestation<C: Config> {
     pub aggregation_bits: BitList<C::MaxValidatorsPerCommittee>,
     pub data: AttestationData,
     pub signature: AggregateSignatureBytes,
+    pub custody_bits_blocks: VariableList<BitList<C::MaxValidatorsPerCommittee>, C::MaxShardBlocksPerAttestation>
 }
 
 #[derive(
@@ -34,9 +36,15 @@ pub struct Attestation<C: Config> {
 pub struct AttestationData {
     pub slot: Slot,
     pub index: u64,
-    pub beacon_block_root: H256,
     pub source: Checkpoint,
     pub target: Checkpoint,
+
+    //LMD GHOST vote
+    pub beacon_block_root: H256,
+    //Current-slot shard block root
+    pub shard_transition_root: Root,
+    //Shard transition root
+    pub head_shard_root: Root,
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize, SszEncode, SszDecode, TreeHash)]
@@ -66,10 +74,10 @@ pub struct BeaconBlockBody<C: Config> {
     pub deposits: VariableList<Deposit, C::MaxDeposits>,
     pub voluntary_exits: VariableList<SignedVoluntaryExit, C::MaxVoluntaryExits>,
 
-    //Custody Game TODO: limits
+    //Custody Game
     pub custody_key_reveals: VariableList<CustodyKeyReveal, C::MaxCustodySlashings>,
     pub early_derived_secret_reveals: VariableList<EarlyDerivedSecretReveal, C::MaxCustodyKeyReveals>,
-    pub custody_slashings: VariableList<CustodySlashing<C>, C::MaxEarlyDerivedSecretReveals>
+    pub custody_slashings: VariableList<SignedCustodySlashing<C>, C::MaxEarlyDerivedSecretReveals>
 }
 
 impl<C: Config> Default for BeaconBlockBody<C> {

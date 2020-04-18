@@ -1,8 +1,8 @@
 use helper_functions::beacon_state_accessors::*;
 use helper_functions::beacon_state_mutators::*;
-use helper_functions::crypto::{bls_verify, hash, hash_tree_root, bls_aggregate_pubkeys, bls_verify_multiple};
+use helper_functions::crypto::{bls_verify, hash, hash_tree_root, bls_aggregate_pubkeys, bls_verify_multiple, compute_custody_bit};
 use helper_functions::math::*;
-use helper_functions::misc::{compute_domain, compute_epoch_at_slot, compute_signing_root};
+use helper_functions::misc::{compute_domain, compute_epoch_at_slot, compute_signing_root, get_randao_epoch_for_custody_period, get_custody_period_for_validator};
 use helper_functions::predicates::{
     is_active_validator, is_slashable_attestation_data, is_slashable_validator,
     is_valid_merkle_branch, validate_indexed_attestation,
@@ -23,7 +23,7 @@ use crate::rewards_and_penalties::*;
 use std::thread::current;
 use crate::rewards_and_penalties::rewards_and_penalties::StakeholderBlock;
 use bls::{bls_verify_aggregate, PublicKey};
-use std::ops::Deref;
+use std::ops::{Deref, Index};
 
 pub fn process_block<T: Config>(state: &mut BeaconState<T>, block: &BeaconBlock<T>) {
     process_block_header(state, &block);
@@ -241,17 +241,60 @@ fn process_custody_slashing<T: Config>(state: &mut BeaconState<T>, slashing: &Si
 
     let shard_transition = &custody_slashing.shard_transition;
 
+    assert!(hash_tree_root(shard_transition) == attestation.data.shard_transition_root);
+
+    assert!(hash_tree_root(&custody_slashing.data) == shard_transition.shard_data_roots[custody_slashing.data_index as usize]);
+
+    let attesters = get_attesting_indices(state, &attestation.data, &attestation.aggregation_bits).unwrap();
+
+    assert!(attesters.contains(&custody_slashing.malefactor_index));
+
+
+    let custody_reveal_period = get_custody_period_for_validator(custody_slashing.malefactor_index, attestation.data.target.epoch);
+    let epoch_to_sign = get_randao_epoch_for_custody_period(custody_reveal_period, custody_slashing.malefactor_index);
+
+    let randao_domain = get_domain(state, T::domain_randao(), Some(epoch_to_sign));
+    let signing_root = compute_signing_root(&epoch_to_sign, domain);
+
+    assert!(bls_verify(&malefactor.pubkey, &signing_root.0, &custody_slashing.malefactor_secret).unwrap());
+
+    let custody_bits = &attestation.custody_bits_blocks[custody_slashing.data_index as usize];
+    let committee = get_beacon_committee(state, attestation.data.slot, attestation.data.index).unwrap();
+    let malefactor_index_in_committee  = committee.iter().position(|&ic| ic == custody_slashing.malefactor_index).unwrap();
+    let claimed_custody_bit = custody_bits.get(malefactor_index_in_committee).unwrap();
+
+    let computed_custody_bit = compute_custody_bit(&custody_slashing.malefactor_secret, &custody_slashing.data.to_vec());
+
+    if claimed_custody_bit != computed_custody_bit {
+        //reward comittee, slash the malefactor
+        let others_count = (committee.len() - 1) as u64;
+        let whistleblower_reward: Gwei = Gwei::from(
+            malefactor.effective_balance / T::whistleblower_reward_quotient() / others_count
+        );
+
+        for attester_index in attesters {
+            if attester_index != custody_slashing.malefactor_index {
+                increase_balance(state, attester_index, whistleblower_reward);
+            }
+        }
+
+        slash_validator(state, custody_slashing.malefactor_index, Option::None);
+    } else{
+        //The claim was flash, slash the validator that induced this work
+        slash_validator(state, custody_slashing.whistleblower_index, Option::None);
+    }
 }
 
-//TODO Config? Constants
-fn get_randao_epoch_for_custody_period(period: u64, validator_index: ValidatorIndex) -> Epoch {
-    let next_period_start = (period + 1) * (EPOCHS_PER_CUSTODY_PERIOD) - validator_index % EPOCHS_PER_CUSTODY_PERIOD;
-    let epoch = Epoch::from(next_period_start + CUSTODY_PERIOD_TO_RANDAO_PADDING);
-    return epoch;
-}
-
-fn get_custody_period_for_validator(validator_index: ValidatorIndex, epoch: Epoch) -> u64 {
-    return (epoch + validator_index % EPOCHS_PER_CUSTODY_PERIOD) / EPOCHS_PER_CUSTODY_PERIOD;
+fn process_custody_game_operations<T: Config>(state: &mut BeaconState<T>, body: &BeaconBlockBody<T>) {
+    for reveal in body.custody_key_reveals.iter() {
+        process_custody_key_reveal(state, reveal);
+    }
+    for reveal in body.early_derived_secret_reveals.iter() {
+        process_early_derived_secret_reveal(state, reveal);
+    }
+    for slashing in body.custody_slashings.iter() {
+        process_custody_slashing(state, slashing);
+    }
 }
 
 fn process_block_header<T: Config>(state: &mut BeaconState<T>, block: &BeaconBlock<T>) {
@@ -467,6 +510,7 @@ fn process_operations<T: Config>(state: &mut BeaconState<T>, body: &BeaconBlockB
     for voluntary_exit in body.voluntary_exits.iter() {
         process_voluntary_exit(state, voluntary_exit);
     }
+    process_custody_game_operations(state, body);
 }
 
 #[cfg(test)]
