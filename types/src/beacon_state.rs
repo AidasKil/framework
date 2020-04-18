@@ -93,6 +93,9 @@ pub struct BeaconState<C: Config> {
     pub previous_justified_checkpoint: Checkpoint,
     pub current_justified_checkpoint: Checkpoint,
     pub finalized_checkpoint: Checkpoint,
+
+    //Custody Game
+    pub exposed_derived_secrets: FixedVector<VariableList<ValidatorIndex, C::SlotsPerEpoch>, C::EarlyDerivedSecretPenaltyMaxFutureEpochs>
 }
 
 impl<C: Config> Default for BeaconState<C> {
@@ -119,6 +122,7 @@ impl<C: Config> Default for BeaconState<C> {
             previous_justified_checkpoint: Default::default(),
             current_justified_checkpoint: Default::default(),
             finalized_checkpoint: Default::default(),
+            exposed_derived_secrets: Default::default(),
         }
     }
 }

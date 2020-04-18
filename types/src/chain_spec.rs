@@ -13,6 +13,7 @@ pub enum Domain {
     Deposit,
     VoluntaryExit,
     Transfer,
+    CustodyBitSlashing
 }
 
 /// Holds all the "constants" for a BeaconChain.
@@ -90,6 +91,7 @@ pub struct ChainSpec {
     domain_deposit: u32,
     domain_voluntary_exit: u32,
     domain_transfer: u32,
+    domain_custody_bit_slashing: u32,
 
     pub boot_nodes: Vec<String>,
     pub network_id: u8,
@@ -107,6 +109,7 @@ impl ChainSpec {
             Domain::Deposit => self.domain_deposit,
             Domain::VoluntaryExit => self.domain_voluntary_exit,
             Domain::Transfer => self.domain_transfer,
+            Domain::CustodyBitSlashing => self.domain_custody_bit_slashing
         };
 
         let mut bytes: Vec<u8> = int_to_bytes4(domain_constant);
@@ -185,6 +188,7 @@ impl ChainSpec {
             domain_deposit: 3,
             domain_voluntary_exit: 4,
             domain_transfer: 5,
+            domain_custody_bit_slashing: 6,
 
             /*
              * Network specific

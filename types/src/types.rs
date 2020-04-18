@@ -67,9 +67,9 @@ pub struct BeaconBlockBody<C: Config> {
     pub voluntary_exits: VariableList<SignedVoluntaryExit, C::MaxVoluntaryExits>,
 
     //Custody Game TODO: limits
-    pub custody_key_reveals: VariableList<CustodyKeyReveal,typenum::U32>,
-    pub early_derived_secret_reveals: VariableList<EarlyDerivedSecretReveal<C>, typenum::U32>,
-    pub custody_slashings: VariableList<CustodySlashing<C>, typenum::U32>
+    pub custody_key_reveals: VariableList<CustodyKeyReveal, C::MaxCustodySlashings>,
+    pub early_derived_secret_reveals: VariableList<EarlyDerivedSecretReveal, C::MaxCustodyKeyReveals>,
+    pub custody_slashings: VariableList<CustodySlashing<C>, C::MaxEarlyDerivedSecretReveals>
 }
 
 impl<C: Config> Default for BeaconBlockBody<C> {

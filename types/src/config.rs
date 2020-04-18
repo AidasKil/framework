@@ -165,7 +165,6 @@ where
         + Ord
         + Default
         + Debug;
-    type ThirdOfSlot: Unsigned + NonZero;
     type MaxShardBlockSize: Unsigned
         + Clone
         + Copy
@@ -176,7 +175,7 @@ where
         + Ord
         + Default
         + Debug;
-    type EarlyDerivedSecretRevealMaskSize: Unsigned
+    type EarlyDerivedSecretPenaltyMaxFutureEpochs: Unsigned
         + Clone
         + Copy
         + PartialEq
@@ -186,7 +185,47 @@ where
         + Ord
         + Default
         + Debug;
-
+    type MaxEarlyDerivedSecretReveals: Unsigned
+        + Clone
+        + Copy
+        + PartialEq
+        + Eq
+        + Hash
+        + PartialOrd
+        + Ord
+        + Default
+        + Debug;
+    type MaxCustodySlashings: Unsigned
+        + Clone
+        + Copy
+        + PartialEq
+        + Eq
+        + Hash
+        + PartialOrd
+        + Ord
+        + Default
+        + Debug;
+    type MaxCustodyKeyReveals: Unsigned
+        + Clone
+        + Copy
+        + PartialEq
+        + Eq
+        + Hash
+        + PartialOrd
+        + Ord
+        + Default
+        + Debug;
+    type MaxShardBlocksPerAttestation: Unsigned
+        + Clone
+        + Copy
+        + PartialEq
+        + Eq
+        + Hash
+        + PartialOrd
+        + Ord
+        + Default
+        + Debug;
+    type ThirdOfSlot: Unsigned + NonZero;
     fn base_reward_factor() -> u64 {
         64
     }
@@ -276,9 +315,7 @@ where
     fn persistent_committee_period() -> u64 {
         2_u64.pow(11)
     }
-    fn proposer_reward_quotient() -> u64 {
-        8
-    }
+    fn proposer_reward_quotient() -> u64 { 8 }
     fn safe_slots_to_update_justified() -> u64 {
         8
     }
@@ -291,6 +328,7 @@ where
     fn whistleblower_reward_quotient() -> u64 {
         512
     }
+    fn shard_block_offsets() -> Vec<u8> {vec![1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233]}
 }
 
 #[derive(
@@ -314,10 +352,15 @@ impl Config for MainnetConfig {
     type ValidatorRegistryLimit = typenum::U1099511627776;
 
     type MaxAttestationsPerEpoch = Prod<Self::MaxAttestations, Self::SlotsPerEpoch>;
-    type ThirdOfSlot = typenum::U4;
-
     type MaxShardBlockSize = typenum::U1048576;
-    type EarlyDerivedSecretRevealMaskSize = typenum::U32;
+
+    type EarlyDerivedSecretPenaltyMaxFutureEpochs = typenum::U16384;
+    type MaxEarlyDerivedSecretReveals = typenum::U1;
+    type MaxCustodySlashings = typenum::U1;
+    type MaxCustodyKeyReveals = typenum::U256;
+    //should be equal to shard_block_offsets.len();
+    type MaxShardBlocksPerAttestation = typenum::U12;
+    type ThirdOfSlot = typenum::U4;
 }
 
 #[derive(
@@ -341,10 +384,15 @@ impl Config for MinimalConfig {
     type ValidatorRegistryLimit = typenum::U1099511627776;
 
     type MaxAttestationsPerEpoch = Prod<Self::MaxAttestations, Self::SlotsPerEpoch>;
-    type ThirdOfSlot = typenum::U2;
-
     type MaxShardBlockSize = typenum::U1048576;
-    type EarlyDerivedSecretRevealMaskSize = typenum::U32;
+
+    type EarlyDerivedSecretPenaltyMaxFutureEpochs = typenum::U16384;
+    type MaxEarlyDerivedSecretReveals = typenum::U1;
+    type MaxCustodySlashings = typenum::U1;
+    type MaxCustodyKeyReveals = typenum::U256;
+    //should be equal to shard_block_offsets.len();
+    type MaxShardBlocksPerAttestation = typenum::U12;
+    type ThirdOfSlot = typenum::U2;
 
     fn genesis_fork_version() -> Version {
         hex!("00000001").into()

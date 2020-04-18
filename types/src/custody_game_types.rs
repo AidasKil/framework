@@ -7,6 +7,7 @@ use crate::{config::Config, primitives::*};
 use std::ptr::null;
 use crate::types::Attestation;
 use bls::PublicKeyBytes;
+use crate::beacon_chain_types::ShardTransition;
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize, SszEncode, SszDecode, TreeHash)]
 pub struct CustodySlashing<C: Config>{
@@ -14,7 +15,7 @@ pub struct CustodySlashing<C: Config>{
     pub malefactor_index: ValidatorIndex,
     pub malefactor_secret: SignatureBytes,
     pub whistleblower_index: ValidatorIndex,
-    //pub shard_transition: ShardTransition TODO: can't find this, prob eth2.0 thing
+    pub shard_transition: ShardTransition<C>,
     pub attestation: Attestation<C>,
     pub data: VariableList<u8, C::MaxShardBlockSize>
 }
@@ -29,12 +30,12 @@ pub struct CustodyKeyReveal{
     pub reveal: SignatureBytes
 }
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize, SszEncode, SszDecode, TreeHash)]
-pub struct EarlyDerivedSecretReveal<C: Config>{
+pub struct EarlyDerivedSecretReveal{
     pub revealed_index: ValidatorIndex,
     pub epoch: Epoch,
     pub reveal: SignatureBytes,
     pub masker_index: ValidatorIndex,
-    pub mask: FixedVector<u8, C::EarlyDerivedSecretRevealMaskSize>
+    pub mask: H256
 }
 
 impl Default for CustodyKeyReveal{
@@ -46,14 +47,14 @@ impl Default for CustodyKeyReveal{
     }
 }
 
-impl<C: Config> Default for EarlyDerivedSecretReveal<C>{
+impl Default for EarlyDerivedSecretReveal{
     fn default() -> Self {
         Self {
             revealed_index: ValidatorIndex::default(),
             epoch: Epoch::default(),
             reveal: SignatureBytes::empty(),
             masker_index: ValidatorIndex::default(),
-            mask: FixedVector::default()
+            mask: H256::default()
         }
     }
 }

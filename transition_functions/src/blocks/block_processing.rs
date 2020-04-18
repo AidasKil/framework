@@ -1,6 +1,6 @@
 use helper_functions::beacon_state_accessors::*;
 use helper_functions::beacon_state_mutators::*;
-use helper_functions::crypto::{bls_verify, hash, hash_tree_root};
+use helper_functions::crypto::{bls_verify, hash, hash_tree_root, bls_aggregate_pubkeys, bls_verify_multiple};
 use helper_functions::math::*;
 use helper_functions::misc::{compute_domain, compute_epoch_at_slot, compute_signing_root};
 use helper_functions::predicates::{
@@ -17,11 +17,13 @@ use types::{
     config::{Config, MainnetConfig},
     types::VoluntaryExit,
 };
-use types::custody_game_types::CustodyKeyReveal;
-use types::primitives::{ValidatorIndex, Epoch};
+use types::custody_game_types::{CustodyKeyReveal, EarlyDerivedSecretReveal, SignedCustodySlashing};
+use types::primitives::{ValidatorIndex, Epoch, PublicKeyBytes, H256};
 use crate::rewards_and_penalties::*;
 use std::thread::current;
 use crate::rewards_and_penalties::rewards_and_penalties::StakeholderBlock;
+use bls::{bls_verify_aggregate, PublicKey};
+use std::ops::Deref;
 
 pub fn process_block<T: Config>(state: &mut BeaconState<T>, block: &BeaconBlock<T>) {
     process_block_header(state, &block);
@@ -145,7 +147,7 @@ fn process_custody_key_reveal<T: Config>(state: &mut BeaconState<T>, reveal: &Cu
     assert!(revealer.next_custody_secret_to_reveal < custody_reveal_period);
     assert!(is_slashable_validator(revealer, current_epoch));
 
-    let domain = get_domain(state, T::domain_randao(), Option::from(epoch_to_sign));
+    let domain = get_domain(state, T::domain_randao(), Some(epoch_to_sign));
 
     let signing_root = compute_signing_root(&epoch_to_sign, domain);
     assert!(bls_verify(&revealer.pubkey, &signing_root.0, &reveal.reveal).unwrap());
@@ -173,6 +175,74 @@ fn process_custody_key_reveal<T: Config>(state: &mut BeaconState<T>, reveal: &Cu
     );
 }
 
+fn process_early_derived_secret_reveal<T: Config>(state: &mut BeaconState<T>, reveal: &EarlyDerivedSecretReveal) {
+    let current_epoch = get_current_epoch(state);
+
+    let revealed_validator = &state.validators[reveal.revealed_index as usize];
+    //T::EarlyDerivedSecretPenaltyMaxFutureEpochs results in `associated item not found in `T``, even though it is defined, even intellisense shows it :-|
+    let derived_secret_location = reveal.epoch % EARLY_DERIVED_SECRET_PENALTY_MAX_FUTURE_EPOCHS;
+    assert!(reveal.epoch >= current_epoch + RANDAO_PENALTY_EPOCHS);
+    assert!(reveal.epoch < current_epoch + EARLY_DERIVED_SECRET_PENALTY_MAX_FUTURE_EPOCHS as u64);
+    assert!(!revealed_validator.slashed);
+    assert!(!(state.exposed_derived_secrets[derived_secret_location as usize]).contains(&reveal.revealed_index));
+
+    let masker = &state.validators[reveal.masker_index as usize];
+    let domain = get_domain(state, T::domain_randao(), Some(reveal.epoch));
+    let signing_roots: Vec<Vec<u8>> = vec![hash_tree_root(&reveal.epoch), reveal.mask]
+        .iter().map(|&root| compute_signing_root(&root, domain).0.to_vec()).collect();
+
+    let v1 = bls_verify(&revealed_validator.pubkey, signing_roots[0 as usize].as_slice(), &reveal.reveal).unwrap();
+    let v2 = bls_verify(&masker.pubkey, signing_roots[1 as usize].as_slice(), &reveal.reveal).unwrap();
+    assert!(v1 && v2);
+
+    if reveal.epoch > current_epoch + CUSTODY_PERIOD_TO_RANDAO_PADDING {
+        slash_validator(state, reveal.revealed_index, Option::from(reveal.masker_index));
+    }
+    else {
+        let max_proposer_slot_reward =
+            state.get_base_reward(reveal.revealed_index) * SLOTS_PER_EPOCH
+            / get_active_validator_indices(state, current_epoch).len() as u64
+            / T::proposer_reward_quotient();
+        let penalty = max_proposer_slot_reward
+            * EARLY_DERIVED_SECRET_REVEAL_SLOT_REWARD_MULTIPLE
+            * state.exposed_derived_secrets[derived_secret_location as usize].len() as u64 + 1;
+
+        //apply penalty
+        let proposer = get_beacon_proposer_index(state).unwrap();
+        let whistleblower_index = reveal.masker_index;
+        let whistleblowing_reward = Gwei::from(penalty / T::whistleblower_reward_quotient());
+        let proposer_reward = Gwei::from(whistleblowing_reward / T::proposer_reward_quotient());
+
+        increase_balance(state, proposer, proposer_reward);
+        increase_balance(state, whistleblower_index, whistleblowing_reward - proposer_reward);
+        decrease_balance(state, reveal.revealed_index, penalty);
+
+        state.exposed_derived_secrets[derived_secret_location as usize].push(reveal.revealed_index);
+    }
+}
+
+fn process_custody_slashing<T: Config>(state: &mut BeaconState<T>, slashing: &SignedCustodySlashing<T>) {
+    let custody_slashing = &slashing.message;
+
+    let malefactor = &state.validators[custody_slashing.malefactor_index as usize];
+    let whistleblower = &state.validators[custody_slashing.whistleblower_index as usize];
+    let current_epoch = get_current_epoch(state);
+    let domain = get_domain(state, DOMAIN_CUSTODY_BIT_SLASHING, Some(current_epoch));
+    let signing_root = compute_signing_root(custody_slashing, domain);
+
+    assert!(bls_verify(&whistleblower.pubkey, &signing_root.0, &slashing.signature).unwrap());
+    assert!(is_slashable_validator(whistleblower, current_epoch));
+    assert!(is_slashable_validator(malefactor, current_epoch));
+
+    let attestation = &custody_slashing.attestation;
+    let indexedAttestation = &get_indexed_attestation(state, attestation).unwrap();
+
+    assert!(validate_indexed_attestation(state, indexedAttestation, true).is_ok());
+
+    let shard_transition = &custody_slashing.shard_transition;
+
+}
+
 //TODO Config? Constants
 fn get_randao_epoch_for_custody_period(period: u64, validator_index: ValidatorIndex) -> Epoch {
     let next_period_start = (period + 1) * (EPOCHS_PER_CUSTODY_PERIOD) - validator_index % EPOCHS_PER_CUSTODY_PERIOD;
@@ -180,7 +250,7 @@ fn get_randao_epoch_for_custody_period(period: u64, validator_index: ValidatorIn
     return epoch;
 }
 
-pub fn get_custody_period_for_validator(validator_index: ValidatorIndex, epoch: Epoch) -> u64 {
+fn get_custody_period_for_validator(validator_index: ValidatorIndex, epoch: Epoch) -> u64 {
     return (epoch + validator_index % EPOCHS_PER_CUSTODY_PERIOD) / EPOCHS_PER_CUSTODY_PERIOD;
 }
 
