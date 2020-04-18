@@ -175,9 +175,9 @@ fn process_reveal_deadlines<T: Config>(state: &mut BeaconState<T>) {
     }
 }
 
-fn process_custody_final_updates(state: &mut BeaconState<T>) {
+fn process_custody_final_updates<T: Config>(state: &mut BeaconState<T>) {
     let current_epoch = get_current_epoch(state);
-    state.exposed_derived_secrets[current_epoch % EARLY_DERIVED_SECRET_PENALTY_MAX_FUTURE_EPOCHS] = Default::default();
+    state.exposed_derived_secrets[(current_epoch % EARLY_DERIVED_SECRET_PENALTY_MAX_FUTURE_EPOCHS) as usize] = Default::default();
 }
 
 fn process_rewards_and_penalties<T: Config>(state: &mut BeaconState<T>) -> Result<(), Error> {
