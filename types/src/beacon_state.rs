@@ -1,6 +1,6 @@
 use crate::{
     config::*, consts, fixed_vector, helper_functions_types::Error as HelperError, primitives::*,
-    types::*,
+    types::*, beacon_chain_types::*
 };
 use ethereum_types::H256 as Hash256;
 use serde::{Deserialize, Serialize};
@@ -59,6 +59,7 @@ impl From<HelperError> for Error {
 pub struct BeaconState<C: Config> {
     // Versioning
     pub genesis_time: u64,
+    pub genesis_validators_root: H256, // Wip: this wasn't here in phase 0 implementation, why?
     pub slot: Slot,
     pub fork: Fork,
 
@@ -94,6 +95,12 @@ pub struct BeaconState<C: Config> {
     pub current_justified_checkpoint: Checkpoint,
     pub finalized_checkpoint: Checkpoint,
 
+    // Phase 1
+    pub shard_states: VariableList<ShardState, C::MaxShards>,
+    pub online_countdown: VariableList<u8, C::ValidatorRegistryLimit>,
+    pub current_light_committee: CompactCommittee<C>,
+    pub next_light_committee: CompactCommittee<C>,
+
     //Custody Game
     pub exposed_derived_secrets: FixedVector<VariableList<ValidatorIndex, C::SlotsPerEpoch>, C::EarlyDerivedSecretPenaltyMaxFutureEpochs>
 }
@@ -106,6 +113,7 @@ impl<C: Config> Default for BeaconState<C> {
             randao_mixes: fixed_vector::default(),
             slashings: fixed_vector::default(),
 
+            genesis_validators_root: Default::default(),
             genesis_time: Default::default(),
             slot: Default::default(),
             fork: Default::default(),
@@ -123,6 +131,10 @@ impl<C: Config> Default for BeaconState<C> {
             current_justified_checkpoint: Default::default(),
             finalized_checkpoint: Default::default(),
             exposed_derived_secrets: Default::default(),
+            shard_states: Default::default(),
+            online_countdown: Default::default(),
+            current_light_committee: Default::default(),
+            next_light_committee: Default::default(),
         }
     }
 }

@@ -306,7 +306,7 @@ impl<C: Config> Store<C> {
         predicates::validate_indexed_attestation(target_state, &indexed_attestation, true)
             .map_err(DebugAsError::new)?;
 
-        for index in indexed_attestation.attesting_indices.iter().copied() {
+        for index in indexed_attestation.committee.iter().copied() {
             self.latest_messages
                 .entry(index)
                 .and_modify(|old_message| {

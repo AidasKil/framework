@@ -3,12 +3,12 @@ use bls::PublicKeyBytes;
 use ethereum_types::H256 as Hash256;
 use serde::{Deserialize, Serialize};
 use ssz_new_derive::{SszDecode, SszEncode};
-use ssz_types::{BitList, FixedVector, VariableList};
+use ssz_types::{BitList, BitVector, FixedVector, VariableList};
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 use typenum::{Sum, U1};
 
-use crate::{config::Config, primitives::*};
+use crate::{config::Config, primitives::*, beacon_chain_types::*};
 use crate::custody_game_types::{CustodyKeyReveal, EarlyDerivedSecretReveal, CustodySlashing, SignedCustodySlashing};
 use crate::beacon_chain_types::Root;
 
@@ -35,7 +35,7 @@ pub struct Attestation<C: Config> {
 )]
 pub struct AttestationData {
     pub slot: Slot,
-    pub index: u64,
+    pub index: CommitteeIndex,
     pub source: Checkpoint,
     pub target: Checkpoint,
 
@@ -58,6 +58,7 @@ pub struct AttesterSlashing<C: Config> {
 )]
 pub struct BeaconBlock<C: Config> {
     pub slot: Slot,
+    pub proposer_index: u64,
     pub parent_root: H256,
     pub state_root: H256,
     pub body: BeaconBlockBody<C>,
@@ -77,7 +78,11 @@ pub struct BeaconBlockBody<C: Config> {
     //Custody Game
     pub custody_key_reveals: VariableList<CustodyKeyReveal, C::MaxCustodySlashings>,
     pub early_derived_secret_reveals: VariableList<EarlyDerivedSecretReveal, C::MaxCustodyKeyReveals>,
-    pub custody_slashings: VariableList<SignedCustodySlashing<C>, C::MaxEarlyDerivedSecretReveals>
+    pub custody_slashings: VariableList<SignedCustodySlashing<C>, C::MaxEarlyDerivedSecretReveals>,
+
+    pub shard_transitions: FixedVector<ShardTransition<C>, C::MaxShards>,
+    pub light_client_signature_bitfield: BitVector<C::LightClientCommitteeSize>,
+    pub light_client_signature: SignatureBytes
 }
 
 impl<C: Config> Default for BeaconBlockBody<C> {
@@ -93,7 +98,10 @@ impl<C: Config> Default for BeaconBlockBody<C> {
             voluntary_exits: Default::default(),
             custody_key_reveals: Default::default(),
             early_derived_secret_reveals: Default::default(),
-            custody_slashings: Default::default()
+            custody_slashings: Default::default(),
+            shard_transitions: Default::default(),
+            light_client_signature_bitfield: Default::default(),
+            light_client_signature: SignatureBytes::empty()
         }
     }
 }
@@ -191,19 +199,8 @@ pub struct HistoricalBatch<C: Config> {
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize, SszEncode, SszDecode, TreeHash)]
 pub struct IndexedAttestation<C: Config> {
-    pub attesting_indices: VariableList<u64, C::MaxValidatorsPerCommittee>,
-    pub data: AttestationData,
-    pub signature: AggregateSignatureBytes,
-}
-
-impl<C: Config> Default for IndexedAttestation<C> {
-    fn default() -> Self {
-        Self {
-            attesting_indices: Default::default(),
-            data: Default::default(),
-            signature: AggregateSignatureBytes::empty(),
-        }
-    }
+    pub committee: VariableList<u64, C::MaxValidatorsPerCommittee>,
+    pub attestation: Attestation<C>,
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize, SszEncode, SszDecode, TreeHash)]
@@ -212,6 +209,7 @@ pub struct PendingAttestation<C: Config> {
     pub data: AttestationData,
     pub inclusion_delay: u64,
     pub proposer_index: u64,
+    pub crosslink_success: bool,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Deserialize, Serialize, SszEncode, SszDecode, TreeHash)]
@@ -277,7 +275,7 @@ pub struct Validator {
     pub exit_epoch: Epoch,
     pub withdrawable_epoch: Epoch,
     pub next_custody_secret_to_reveal: u64,
-    pub max_reveal_lateness: u64,
+    pub max_reveal_lateness: Epoch,
 }
 
 impl Default for Validator {

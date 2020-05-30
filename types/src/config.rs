@@ -174,7 +174,9 @@ where
         + PartialOrd
         + Ord
         + Default
-        + Debug;
+        + Debug
+        + Send
+        + Sync;
     type EarlyDerivedSecretPenaltyMaxFutureEpochs: Unsigned
         + Clone
         + Copy
@@ -194,7 +196,9 @@ where
         + PartialOrd
         + Ord
         + Default
-        + Debug;
+        + Debug
+        + Send
+        + Sync;
     type MaxCustodySlashings: Unsigned
         + Clone
         + Copy
@@ -204,7 +208,9 @@ where
         + PartialOrd
         + Ord
         + Default
-        + Debug;
+        + Debug
+        + Send
+        + Sync;
     type MaxCustodyKeyReveals: Unsigned
         + Clone
         + Copy
@@ -214,7 +220,9 @@ where
         + PartialOrd
         + Ord
         + Default
-        + Debug;
+        + Debug
+        + Send
+        + Sync;
     type MaxShardBlocksPerAttestation: Unsigned
         + Clone
         + Copy
@@ -224,7 +232,81 @@ where
         + PartialOrd
         + Ord
         + Default
-        + Debug;
+        + Debug
+        + Send
+        + Sync;
+    type MaxShards: Unsigned
+        + Clone
+        + Copy
+        + PartialEq
+        + Eq
+        + Hash
+        + PartialOrd
+        + Ord
+        + Default
+        + Debug
+        + Sync
+        + Send;
+    type TargetShardBlockSize: Unsigned
+        + Clone
+        + Copy
+        + PartialEq
+        + Eq
+        + Hash
+        + PartialOrd
+        + Ord
+        + Default
+        + Debug
+        + Sync
+        + Send;
+    type MaxGasprice:Unsigned
+        + Clone
+        + Copy
+        + PartialEq
+        + Eq
+        + Hash
+        + PartialOrd
+        + Ord
+        + Default
+        + Debug
+        + Sync
+        + Send;
+    type MinGasprice:Unsigned
+        + Clone
+        + Copy
+        + PartialEq
+        + Eq
+        + Hash
+        + PartialOrd
+        + Ord
+        + Default
+        + Debug
+        + Sync
+        + Send;
+    type GaspriceAdjustmentCoefficient:Unsigned
+        + Clone
+        + Copy
+        + PartialEq
+        + Eq
+        + Hash
+        + PartialOrd
+        + Ord
+        + Default
+        + Debug
+        + Sync
+        + Send;
+    type LightClientCommitteeSize: Unsigned
+        + Clone
+        + Copy
+        + PartialEq
+        + Eq
+        + Hash
+        + PartialOrd
+        + Ord
+        + Default
+        + Debug
+        + Sync
+        + Send;
     type ThirdOfSlot: Unsigned + NonZero;
     fn base_reward_factor() -> u64 {
         64
@@ -255,6 +337,10 @@ where
     }
     fn domain_aggregate_and_proof() -> DomainType {
         6
+    }
+    fn domain_shard_committee() -> DomainType {
+        // WIP: why are other DomainType values not as specified in specification
+        0x81000000
     }
     fn effective_balance_increment() -> u64 {
         1_000_000_000
@@ -328,7 +414,15 @@ where
     fn whistleblower_reward_quotient() -> u64 {
         512
     }
-    fn shard_block_offsets() -> Vec<u8> {vec![1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233]}
+    fn shard_block_offsets() -> Vec<u8> {
+        vec![1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233]
+    }
+    fn shard_committee_period() -> u64 {
+        256
+    }
+    fn light_client_committe_period() -> u64 {
+        256
+    }
 }
 
 #[derive(
@@ -353,6 +447,14 @@ impl Config for MainnetConfig {
 
     type MaxAttestationsPerEpoch = Prod<Self::MaxAttestations, Self::SlotsPerEpoch>;
     type MaxShardBlockSize = typenum::U1048576;
+    type MaxShards = typenum::U1024;
+
+    // WIP: different values in beacon chain specification and
+    // https://github.com/ethereum/eth2.0-specs/blob/dev/configs/mainnet.yaml
+    type TargetShardBlockSize = typenum::U262144;
+    type MaxGasprice = typenum::U16384;
+    type MinGasprice = typenum::U8;
+    type GaspriceAdjustmentCoefficient = typenum::U8;
 
     type EarlyDerivedSecretPenaltyMaxFutureEpochs = typenum::U16384;
     type MaxEarlyDerivedSecretReveals = typenum::U1;
@@ -361,6 +463,7 @@ impl Config for MainnetConfig {
     //should be equal to shard_block_offsets.len();
     type MaxShardBlocksPerAttestation = typenum::U12;
     type ThirdOfSlot = typenum::U4;
+    type LightClientCommitteeSize = typenum::U128;
 }
 
 #[derive(
@@ -385,6 +488,11 @@ impl Config for MinimalConfig {
 
     type MaxAttestationsPerEpoch = Prod<Self::MaxAttestations, Self::SlotsPerEpoch>;
     type MaxShardBlockSize = typenum::U1048576;
+    type MaxShards = typenum::U8;
+    type TargetShardBlockSize = typenum::U262144;
+    type MaxGasprice = typenum::U16384;
+    type MinGasprice = typenum::U8;
+    type GaspriceAdjustmentCoefficient = typenum::U8;
 
     type EarlyDerivedSecretPenaltyMaxFutureEpochs = typenum::U16384;
     type MaxEarlyDerivedSecretReveals = typenum::U1;
@@ -393,6 +501,7 @@ impl Config for MinimalConfig {
     //should be equal to shard_block_offsets.len();
     type MaxShardBlocksPerAttestation = typenum::U12;
     type ThirdOfSlot = typenum::U2;
+    type LightClientCommitteeSize = typenum::U128;
 
     fn genesis_fork_version() -> Version {
         hex!("00000001").into()
@@ -408,5 +517,8 @@ impl Config for MinimalConfig {
     }
     fn target_committee_size() -> u64 {
         4
+    }
+    fn shard_committee_period() -> u64 {
+        64
     }
 }

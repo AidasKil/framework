@@ -62,7 +62,8 @@ pub fn validate_indexed_attestation<C: Config>(
     indexed_attestation: &IndexedAttestation<C>,
     verify_signature: bool,
 ) -> Result<(), Error> {
-    let indices = &indexed_attestation.attesting_indices;
+    // WIP: Just commented out for now so code compiles
+    /*let indices = &indexed_attestation.attesting_indices;
 
     let max_validators = C::MaxValidatorsPerCommittee::to_usize();
     if indices.len() > max_validators {
@@ -88,7 +89,7 @@ pub fn validate_indexed_attestation<C: Config>(
 
     if verify_signature && !signature.verify(signing_root.as_bytes(), &aggr_pubkey) {
         return Err(Error::InvalidSignature);
-    }
+    }*/
 
     Ok(())
 

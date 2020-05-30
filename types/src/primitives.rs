@@ -24,6 +24,7 @@ pub type Gwei = u64;
 pub type Shard = u64;
 pub type Slot = u64;
 pub type ValidatorIndex = u64;
+pub type CommitteeIndex = u64;
 pub type ValidatorId = PublicKey;
 pub type DomainType = u32;
 pub type UnixSeconds = u64;

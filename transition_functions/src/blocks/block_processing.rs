@@ -389,8 +389,8 @@ fn process_attester_slashing<T: Config>(
     let attestation_1 = &attester_slashing.attestation_1;
     let attestation_2 = &attester_slashing.attestation_2;
     assert!(is_slashable_attestation_data(
-        &attestation_1.data,
-        &attestation_2.data
+        &attestation_1.attestation.data,
+        &attestation_2.attestation.data
     ));
     assert!(validate_indexed_attestation(state, &attestation_1, true).is_ok());
     assert!(validate_indexed_attestation(state, &attestation_2, true).is_ok());
@@ -399,12 +399,12 @@ fn process_attester_slashing<T: Config>(
 
     // Turns attesting_indices into a binary tree set. It's a set and it's ordered :)
     let attesting_indices_1 = attestation_1
-        .attesting_indices
+        .committee
         .iter()
         .cloned()
         .collect::<BTreeSet<_>>();
     let attesting_indices_2 = attestation_2
-        .attesting_indices
+        .committee
         .iter()
         .cloned()
         .collect::<BTreeSet<_>>();
@@ -421,36 +421,67 @@ fn process_attester_slashing<T: Config>(
     }
     assert!(slashed_any);
 }
+fn validate_attestation<C: Config>(
+    state: &BeaconState<C>,
+    attestation: &Attestation<C>,
+    verify_signature: bool,
+) {
+    let data = &attestation.data;
+    let attestation_slot = data.slot;
+
+    assert!(data.index < get_committee_count_at_slot(state, attestation_slot).unwrap()); //# Nėra index ir slot. ¯\_(ツ)_/¯
+    assert!(data.index < get_active_shard_count(state));
+    assert!(
+        data.target.epoch == get_previous_epoch(state)
+            || data.target.epoch == get_current_epoch(state)
+    );
+    assert!(data.target.epoch == compute_epoch_at_slot::<C>(data.slot));
+    assert!(
+        attestation_slot + C::min_attestation_inclusion_delay() <= state.slot
+            && state.slot <= attestation_slot + C::SlotsPerEpoch::U64
+    );
+
+    let committee = get_beacon_committee(state, attestation_slot, data.index).unwrap();
+    assert_eq!(attestation.aggregation_bits.len(), committee.len());
+
+    if !attestation.custody_bits_blocks.is_empty() {
+        let shard = get_shard(state, attestation);
+        assert_eq!(data.slot + C::min_attestation_inclusion_delay(), state.slot);
+        assert_eq!(attestation.custody_bits_blocks.len(), get_offset_slots(state, shard).len());
+    } else {
+        assert_eq!(data.slot + C::min_attestation_inclusion_delay(), state.slot);
+        assert_eq!(data.shard_transition_root, H256::default())
+    }
+
+    //# Check signature
+    assert!(validate_indexed_attestation(
+        &state,
+        &get_indexed_attestation(&state, &attestation).unwrap(),
+        verify_signature,
+    )
+    .is_ok());
+}
 
 fn process_attestation<T: Config>(
     state: &mut BeaconState<T>,
     attestation: &Attestation<T>,
     verify_signature: bool,
 ) {
+    validate_attestation(&state, &attestation, verify_signature);
+
     let data = &attestation.data;
     let attestation_slot = data.slot;
-    assert!(data.index < get_committee_count_at_slot(state, attestation_slot).unwrap()); //# Nėra index ir slot. ¯\_(ツ)_/¯
-    assert!(
-        data.target.epoch == get_previous_epoch(state)
-            || data.target.epoch == get_current_epoch(state)
-    );
-    assert!(
-        attestation_slot + T::min_attestation_inclusion_delay() <= state.slot
-            && state.slot <= attestation_slot + T::SlotsPerEpoch::U64
-    );
-
-    let committee = get_beacon_committee(state, attestation_slot, data.index).unwrap();
-    assert_eq!(attestation.aggregation_bits.len(), committee.len());
 
     let pending_attestation = PendingAttestation {
         data: attestation.data.clone(),
         aggregation_bits: attestation.aggregation_bits.clone(),
         inclusion_delay: (state.slot - attestation_slot) as u64,
         proposer_index: get_beacon_proposer_index(state).unwrap(),
+        crosslink_success: false // To be filled in during process_crosslinks
     };
 
     if data.target.epoch == get_current_epoch(state) {
-        assert_eq!(data.source, state.current_justified_checkpoint);
+        assert_eq!(data.source, state.current_justified_checkpoint); // Should be moved to validate_attestation
         state
             .current_epoch_attestations
             .push(pending_attestation)
@@ -462,14 +493,6 @@ fn process_attestation<T: Config>(
             .push(pending_attestation)
             .unwrap();
     }
-
-    //# Check signature
-    assert!(validate_indexed_attestation(
-        &state,
-        &get_indexed_attestation(&state, &attestation).unwrap(),
-        verify_signature,
-    )
-    .is_ok());
 }
 
 fn process_eth1_data<T: Config>(state: &mut BeaconState<T>, body: &BeaconBlockBody<T>) {

@@ -3,7 +3,7 @@ use crate::math::*;
 use crate::misc::*;
 use crate::predicates::is_active_validator;
 use ethereum_types::H256;
-use ssz_types::BitList;
+use ssz_types::{BitList, VariableList};
 use std::cmp::max;
 use std::collections::BTreeSet;
 use std::convert::TryFrom;
@@ -247,13 +247,14 @@ pub fn get_indexed_attestation<C: Config>(
     state: &BeaconState<C>,
     attestation: &Attestation<C>,
 ) -> Result<IndexedAttestation<C>, Error> {
-    let attesting_indices =
-        get_attesting_indices(state, &attestation.data, &attestation.aggregation_bits)?;
+    let committee = get_beacon_committee(state, attestation.data.slot, attestation.data.index);
+    if committee.is_err() {
+        return Err(committee.err().expect("Expected success"));
+    }
 
     let att = IndexedAttestation {
-        attesting_indices: attesting_indices.into_iter().collect::<Vec<_>>().into(),
-        data: attestation.data.clone(),
-        signature: attestation.signature.clone(),
+        committee: VariableList::from(committee.expect("Expected success getting committee")),
+        attestation: attestation.clone(),
     };
     Ok(att)
 }
@@ -281,6 +282,76 @@ pub fn get_attesting_indices<C: Config>(
         }
     }
     Ok(validators)
+}
+
+pub fn get_active_shard_count<C: Config>(state: &BeaconState<C>) -> u64 {
+    return state.shard_states.len() as u64;
+}
+
+pub fn get_online_validator_indices<C: Config>(state: &BeaconState<C>) -> BTreeSet<ValidatorIndex> {
+    let active_validators = get_active_validator_indices(state, get_current_epoch(state));
+    let mut online_validators: BTreeSet<ValidatorIndex> = BTreeSet::new();
+
+    for validator in active_validators {
+        if state.online_countdown[validator as usize] != 0 {
+            online_validators.insert(validator);
+        }
+    }
+
+    return online_validators;
+}
+
+pub fn get_shard_committee<C: Config>(state: &BeaconState<C>, epoch: Epoch, shard: Shard) -> Result<Vec<ValidatorIndex>, Error> {
+    let mut source_epoch = epoch - epoch % C::shard_committee_period();
+    if source_epoch >= C::shard_committee_period() {
+        source_epoch -= C::shard_committee_period();
+    }
+
+    let active_validator_indices = get_active_validator_indices(state, source_epoch);
+    // Wip: add error handling
+    let seed = get_seed(state, source_epoch, C::domain_shard_committee()).expect("Failed to get seed");
+    let active_shard_count = get_active_shard_count(state);
+    return compute_committee::<C>(&active_validator_indices, &seed, shard, active_shard_count);
+}
+
+pub fn get_light_client_committee<C: Config>(state: &BeaconState<C>, epoch: Epoch) -> Result<Vec<ValidatorIndex>, Error> {
+    let mut source_epoch = epoch - epoch % C::light_client_committe_period();
+    if source_epoch >= C::light_client_committe_period() {
+        source_epoch -= C::light_client_committe_period();
+    }
+
+    let active_validator_indices = get_active_validator_indices(state, source_epoch);
+    // Wip: add error handling
+    let seed = get_seed(state, source_epoch, C::domain_shard_committee()).expect("Failed to get seed");
+    let committee = compute_committee::<C>(&active_validator_indices, &seed, 0, get_active_shard_count(state))
+        .expect("Failed to compute light client committee");
+
+    return Ok(committee[0..C::target_committee_size() as usize].to_vec());
+}
+
+pub fn get_shard_proposer_index<C: Config>(state: &BeaconState<C>, slot: Slot, shard: Shard) -> ValidatorIndex {
+    // WIP: add error handling?
+    let committee = get_shard_committee(state, compute_epoch_at_slot::<C>(slot), shard).expect("Failed to get shard committee");
+    let seed = get_seed(state, get_current_epoch(state), C::domain_shard_committee()).expect("Failed to get seed");
+    let r = bytes_to_int(&seed.as_bytes()[0..8]).expect("Failed to convert bytes to int");
+    return committee[r as usize % committee.len()];
+}
+
+pub fn get_latest_slot_for_shard<C: Config>(state: &BeaconState<C>, shard: Shard) -> Slot {
+    return state.shard_states[shard as usize].slot;
+}
+
+pub fn get_start_shard<C: Config>(state: &BeaconState<C>, slot: Slot) -> Shard {
+    // WIP: not implemented in beacon chain specification
+    return 0;
+}
+
+pub fn get_shard<C: Config>(state: &BeaconState<C>, attestation: &Attestation<C>) -> Shard {
+    return compute_shard_from_committee_index(state, attestation.data.index, attestation.data.slot);
+}
+
+pub fn get_offset_slots<C: Config>(state: &BeaconState<C>, shard: Shard) -> Vec<Slot> {
+    return compute_offset_slots::<C>(state.shard_states[shard as usize].slot, state.slot);
 }
 
 #[cfg(test)]

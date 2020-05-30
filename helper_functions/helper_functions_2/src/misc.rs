@@ -2,6 +2,7 @@ use crate::crypto::{hash, hash_tree_root};
 use crate::math::bytes_to_int;
 use crate::math::int_to_bytes;
 
+use std::cmp::{min, max};
 use std::convert::TryFrom;
 use std::convert::TryInto;
 use tree_hash::TreeHash;
@@ -9,9 +10,14 @@ use typenum::marker_traits::Unsigned;
 use types::beacon_state::BeaconState;
 use types::config::Config;
 use types::helper_functions_types::Error;
-use types::primitives::{Domain, DomainType, Epoch, Slot, ValidatorIndex, Version, H256};
+use types::primitives::{Domain, DomainType, Epoch, Slot, ValidatorIndex,
+    Version, H256, Shard, CommitteeIndex, Gwei};
 use types::types::SigningRoot;
 use types::consts::{EPOCHS_PER_CUSTODY_PERIOD, CUSTODY_PERIOD_TO_RANDAO_PADDING};
+use types::beacon_chain_types::CompactCommittee;
+use ssz_types::VariableList;
+use bls::PublicKeyBytes;
+use crate::beacon_state_accessors::{get_active_shard_count, get_start_shard};
 
 pub fn compute_epoch_at_slot<C: Config>(slot: Slot) -> Epoch {
     slot / C::SlotsPerEpoch::to_u64()
@@ -172,6 +178,85 @@ pub fn get_randao_epoch_for_custody_period(period: u64, validator_index: Validat
 
 pub fn get_custody_period_for_validator(validator_index: ValidatorIndex, epoch: Epoch) -> u64 {
     return (epoch + validator_index % EPOCHS_PER_CUSTODY_PERIOD) / EPOCHS_PER_CUSTODY_PERIOD;
+}
+
+pub fn compute_shard_from_committee_index<C: Config>(state: &BeaconState<C>, index: CommitteeIndex, slot: Slot)  -> Shard {
+    let active_shards = get_active_shard_count(&state);
+    return (index + get_start_shard(&state, slot)) % active_shards;
+}
+
+pub fn compute_offset_slots<C: Config>(start_slot: Slot, end_slot: Slot) -> Vec<Slot> {
+    // Return the offset slots that are greater than start_slot and less than end_slot.
+    let mut slots = Vec::new();
+    for offset in C::shard_block_offsets().iter() {
+        let temp_slot = start_slot + *offset as Slot;
+        if temp_slot < end_slot {
+            slots.push(temp_slot);
+        }
+    }
+
+    return slots;
+}
+
+pub fn compute_previous_slot(slot: Slot) -> Slot {
+    if slot > 0 {
+        return slot - 1;
+    }
+
+    return 0;
+}
+
+pub fn pack_compact_validator(index: ValidatorIndex, slashed: bool, balance_in_increments: u64) -> u64 {
+    /*
+    Create a compact validator object representing index, slashed status, and compressed balance.
+    Takes as input balance-in-increments (// EFFECTIVE_BALANCE_INCREMENT) to preserve symmetry with
+    the unpacking function.
+    */
+    return (index << 16) + ((slashed as u64) << 15) + balance_in_increments;
+}
+
+pub fn unpack_compact_validator(compact_validator: u64) -> (ValidatorIndex, bool, u64) {
+    /* Return validator index, slashed, balance // EFFECTIVE_BALANCE_INCREMENt */
+    return (
+        compact_validator >> 16,
+        (compact_validator >> 15) % 2 != 0,
+        compact_validator & (2_u64.pow(15) - 1),
+    );
+}
+
+pub fn committee_to_compact_committee<C: Config>(state: &BeaconState<C>, 
+    committee: &VariableList<ValidatorIndex, C::MaxValidatorsPerCommittee>) -> CompactCommittee<C> {
+    let mut pubkeys: VariableList<PublicKeyBytes, C::MaxValidatorsPerCommittee> = VariableList::empty();
+    let mut compact_validators: VariableList<u64, C::MaxValidatorsPerCommittee> = VariableList::empty();
+
+    for validator_index in committee.iter() {
+        let validator = &state.validators[*validator_index as usize];
+        compact_validators.push(pack_compact_validator(*validator_index, validator.slashed,
+            validator.effective_balance / C::effective_balance_increment()));
+        
+        pubkeys.push(validator.pubkey.clone());
+    }
+    return CompactCommittee {
+        pubkeys: pubkeys,
+        compact_validators: compact_validators
+    };
+}
+
+pub fn compute_updated_gasprice<C: Config>(prev_gasprice: Gwei, length: u64) -> Gwei { 
+    let target_shard_bsize = C::TargetShardBlockSize::to_u64();
+    let gasprice_adjustemnt = C::GaspriceAdjustmentCoefficient::to_u64();
+
+    if length > target_shard_bsize {
+        let delta = (prev_gasprice * (length - target_shard_bsize)
+                 / target_shard_bsize / gasprice_adjustemnt);
+
+        return min(prev_gasprice + delta, C::MaxGasprice::to_u64());
+    } else {
+        let delta = (prev_gasprice * (target_shard_bsize - length)
+                 / target_shard_bsize / gasprice_adjustemnt);
+                 
+        return max(prev_gasprice, C::MinGasprice::to_u64() + delta) - delta;
+    }
 }
 
 #[cfg(test)]
