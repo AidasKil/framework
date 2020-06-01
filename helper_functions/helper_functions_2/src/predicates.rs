@@ -9,9 +9,10 @@ use types::{
     beacon_state::BeaconState,
     config::Config,
     helper_functions_types::Error,
-    primitives::{AggregateSignature, Epoch, H256},
-    types::{AttestationData, IndexedAttestation, Validator},
+    primitives::{AggregateSignature, Epoch, H256, CommitteeIndex},
+    types::{AttestationData, IndexedAttestation, Validator, PendingAttestation},
 };
+use bls::{SignatureBytes, Signature, PublicKeyBytes};
 
 type ValidatorIndexList<C> = VariableList<u64, <C as Config>::MaxValidatorsPerCommittee>;
 
@@ -143,6 +144,57 @@ pub fn is_valid_merkle_branch(
     }
 
     Ok(H256::from_slice(&value_bytes) == *root)
+}
+
+pub fn is_winning_attestation<C: Config>(
+    state: BeaconState<C>, 
+    attestation: PendingAttestation<C>, 
+    committee_index: CommitteeIndex,
+    winning_root: H256
+) -> bool {
+    // Check if attestation helped contribute to the successful crosslink of
+    // winning_root formed by committee_index committee at the current slot.
+    return attestation.data.slot == state.slot 
+    && attestation.data.index == committee_index 
+    && attestation.data.shard_transition_root == winning_root;
+}
+
+pub fn optional_aggregate_verify(pubkeys: Vec<PublicKeyBytes>, messages: Vec<H256>, signature: SignatureBytes) -> bool {
+    if pubkeys.is_empty() {
+        // WIP: should SignatureBytes::empty() be part of configuration??
+        return signature == SignatureBytes::empty();
+    }
+
+    // WIP: really not sure if any of this is correct :(
+    let mut aggr_pkey = AggregatePublicKey::new();
+    for pubkey in pubkeys.iter() {
+        aggr_pkey.add(&(pubkey.try_into().expect("Failed to create public key")));
+    }
+
+    let aggr_sig = AggregateSignature::from_bytes(signature.as_bytes().as_slice())
+        .expect("Failed to create aggregate signature");
+    
+    let message_bytes: Vec<&[u8]> = messages.iter().map(|m| m.as_bytes()).rev().collect();
+    return aggr_sig.verify_multiple(&message_bytes, &[&aggr_pkey]);
+}
+
+pub fn optional_fast_aggregate_verify(pubkeys: Vec<PublicKeyBytes>, message: H256, signature: SignatureBytes) -> bool {
+    // WIP: did this according to Phase 0 implementation of validate_indexed_attestation.
+    // Really not sure if this is correct. Same for optional_aggregate_verify.
+    if pubkeys.is_empty() {
+        // WIP: should SignatureBytes::empty() be part of configuration??
+        return signature == SignatureBytes::empty();
+    }
+    
+    let mut aggr_pkey = AggregatePublicKey::new();
+    for pubkey in pubkeys.iter() {
+        aggr_pkey.add(&(pubkey.try_into().expect("Failed to create public key")));
+    }
+
+    let aggr_sig = AggregateSignature::from_bytes(signature.as_bytes().as_slice())
+        .expect("Failed to create aggregate signature");
+    
+    return aggr_sig.verify(&message.as_bytes(), &aggr_pkey);
 }
 
 #[cfg(test)]
