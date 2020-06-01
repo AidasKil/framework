@@ -1,5 +1,8 @@
 use crate::{beacon_state_accessors as accessors, crypto, misc};
-use bls::AggregatePublicKey;
+use bls::{
+    AggregatePublicKey, PublicKey, PublicKeyBytes, Signature, SignatureBytes
+};
+use itertools::izip;
 use itertools::Itertools;
 use ssz_types::VariableList;
 use std::convert::{TryFrom, TryInto as _};
@@ -10,9 +13,11 @@ use types::{
     config::Config,
     helper_functions_types::Error,
     primitives::{AggregateSignature, Epoch, H256, CommitteeIndex},
-    types::{AttestationData, IndexedAttestation, Validator, PendingAttestation},
+    types::{AttestationData, IndexedAttestation, Validator, PendingAttestation, Attestation},
+    beacon_chain_types::AttestationCustodyBitWrapper,
 };
-use bls::{SignatureBytes, Signature, PublicKeyBytes};
+use crate::misc::compute_signing_root;
+use crate::crypto::{hash_tree_root, bls_verify_multiple};
 
 type ValidatorIndexList<C> = VariableList<u64, <C as Config>::MaxValidatorsPerCommittee>;
 
@@ -195,6 +200,79 @@ pub fn optional_fast_aggregate_verify(pubkeys: Vec<PublicKeyBytes>, message: H25
         .expect("Failed to create aggregate signature");
     
     return aggr_sig.verify(&message.as_bytes(), &aggr_pkey);
+}
+
+pub fn verify_attestation_custody<C: Config>(
+    state: &BeaconState<C>,
+    indexed_attestation: &IndexedAttestation<C>,
+) -> bool {
+    let attestation = &indexed_attestation.attestation;
+    let aggregation_bits = &attestation.aggregation_bits;
+    let domain = accessors::get_domain(state, C::domain_beacon_attester(), Some(attestation.data.target.epoch));
+    
+    let mut all_pubkeys = vec![];
+    let mut all_signing_roots: Vec<Vec<u8>> = vec![];
+
+    for (block_index, custody_bits) in attestation.custody_bits_blocks.iter().enumerate() {
+        assert!(custody_bits.len() == indexed_attestation.committee.len());
+        for (index, participant) in indexed_attestation.committee.iter().enumerate() {
+            let aggregation_bit = aggregation_bits.get(index).unwrap();
+            let custody_bit = custody_bits.get(index).unwrap();
+            if (aggregation_bit) {
+                all_pubkeys.push(&state.validators[*participant as usize].pubkey);
+                let attestation_wrapper = AttestationCustodyBitWrapper {
+                    attestation_data_root: hash_tree_root(&attestation.data),
+                    block_index: block_index as u64,
+                    bit: custody_bit
+                };
+                let signing_root = compute_signing_root(&attestation_wrapper, domain).as_bytes().to_vec();
+                all_signing_roots.push(signing_root);
+            } else {
+                assert!(!custody_bit);
+            }
+        }
+    }
+
+    //TODO: make this line more readable
+    bls_verify_multiple(&all_pubkeys, all_signing_roots.iter().map(|x| x.as_slice()).collect::<Vec<&[u8]>>().as_slice(), &attestation.signature).unwrap()
+}
+
+pub fn is_valid_indexed_attestation<C: Config>(
+    state: &BeaconState<C>,
+    indexed_attestation: &IndexedAttestation<C>,
+) -> bool {
+    let attestation = &indexed_attestation.attestation;
+    let aggregation_bits = &attestation.aggregation_bits;
+    if (aggregation_bits.is_zero() || aggregation_bits.len() != indexed_attestation.committee.len()) {
+        false;
+    }
+
+    if (attestation.custody_bits_blocks.len() == 0) {
+        //fall back on phase0 behavior if there is no shard data.
+        let domain = accessors::get_domain(state, C::domain_beacon_attester(), Some(attestation.data.target.epoch));
+        let mut all_pubkeys = AggregatePublicKey::new();
+        for (index, participant) in indexed_attestation.committee.iter().enumerate() {
+            let aggregation_bit = aggregation_bits.get(index).unwrap();
+            if (aggregation_bit) {
+                all_pubkeys.add(&(&state.validators[*participant as usize].pubkey).try_into().unwrap());
+            }
+        }
+        let signing_root = compute_signing_root(&indexed_attestation.attestation.data, domain);
+
+        let aggr_sig = AggregateSignature::from_bytes(&attestation.signature.as_bytes().as_slice())
+        .expect("Failed to create aggregate signature");
+
+        aggr_sig.verify(&signing_root.as_bytes(), &all_pubkeys)
+    } else {
+        verify_attestation_custody(state, indexed_attestation)
+    }
+}
+
+pub fn is_on_time_attestation<C: Config>(
+    state: &BeaconState<C>, 
+    attestation: &Attestation<C>
+) -> bool {
+    attestation.data.slot + C::min_attestation_inclusion_delay() == state.slot
 }
 
 #[cfg(test)]
