@@ -2,10 +2,13 @@ use helper_functions::beacon_state_accessors::*;
 use helper_functions::beacon_state_mutators::*;
 use helper_functions::crypto::{bls_verify, hash, hash_tree_root, bls_aggregate_pubkeys, bls_verify_multiple, compute_custody_bit};
 use helper_functions::math::*;
-use helper_functions::misc::{compute_domain, compute_epoch_at_slot, compute_signing_root, get_randao_epoch_for_custody_period, get_custody_period_for_validator};
+use helper_functions::misc::{
+    compute_domain, compute_epoch_at_slot, compute_signing_root, compute_previous_slot,
+    get_randao_epoch_for_custody_period, get_custody_period_for_validator
+};
 use helper_functions::predicates::{
     is_active_validator, is_slashable_attestation_data, is_slashable_validator,
-    is_valid_merkle_branch, validate_indexed_attestation,
+    is_valid_merkle_branch, validate_indexed_attestation, optional_fast_aggregate_verify
 };
 use std::collections::BTreeSet;
 use std::convert::TryInto;
@@ -29,6 +32,7 @@ pub fn process_block<T: Config>(state: &mut BeaconState<T>, block: &BeaconBlock<
     process_block_header(state, &block);
     process_randao(state, &block.body);
     process_eth1_data(state, &block.body);
+    process_light_client_signatures(state, &block.body);
     process_operations(state, &block.body);
 }
 
@@ -534,6 +538,28 @@ fn process_operations<T: Config>(state: &mut BeaconState<T>, body: &BeaconBlockB
         process_voluntary_exit(state, voluntary_exit);
     }
     process_custody_game_operations(state, body);
+}
+
+fn process_light_client_signatures<C: Config>(state: &mut BeaconState<C>, block_body: &BeaconBlockBody<C>) {
+    let committee = get_light_client_committee(state, get_current_epoch(state)).unwrap();
+    let mut total_reward: Gwei = 0;
+    let mut signer_pubkeys: Vec<PublicKeyBytes> = Vec::new();
+
+    for i in 0..committee.len() {
+        if block_body.light_client_signature_bitfield.get(i).unwrap() {
+            let participant_index = committee[i];
+            signer_pubkeys.push((state.validators[i].pubkey.clone()));
+            increase_balance(state, participant_index, state.get_base_reward(participant_index));
+            total_reward += state.get_base_reward(participant_index)
+        }
+    }
+
+    increase_balance(state, get_beacon_proposer_index(state).unwrap(), total_reward / C::proposer_reward_quotient());
+
+    let slot = compute_previous_slot(state.slot);
+    let signing_root = compute_signing_root(&get_block_root_at_slot(state, slot).unwrap(),
+                                       get_domain(state, C::domain_light_client(), Some(compute_epoch_at_slot::<C>(slot))));
+    assert!(optional_fast_aggregate_verify(signer_pubkeys, signing_root, &block_body.light_client_signature));
 }
 
 #[cfg(test)]

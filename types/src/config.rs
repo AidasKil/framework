@@ -342,6 +342,9 @@ where
         // WIP: why are other DomainType values not as specified in specification
         0x81000000
     }
+    fn domain_light_client() -> DomainType {
+        0x82000000
+    }
     fn effective_balance_increment() -> u64 {
         1_000_000_000
     }

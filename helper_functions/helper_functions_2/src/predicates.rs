@@ -164,31 +164,22 @@ pub fn is_winning_attestation<C: Config>(
     && attestation.data.shard_transition_root == winning_root;
 }
 
-pub fn optional_aggregate_verify(pubkeys: Vec<PublicKeyBytes>, messages: Vec<H256>, signature: SignatureBytes) -> bool {
+pub fn optional_aggregate_verify(pubkeys: Vec<&PublicKeyBytes>, messages: Vec<H256>, signature: SignatureBytes) -> bool {
     if pubkeys.is_empty() {
         // WIP: should SignatureBytes::empty() be part of configuration??
         return signature == SignatureBytes::empty();
     }
 
-    // WIP: really not sure if any of this is correct :(
-    let mut aggr_pkey = AggregatePublicKey::new();
-    for pubkey in pubkeys.iter() {
-        aggr_pkey.add(&(pubkey.try_into().expect("Failed to create public key")));
-    }
-
-    let aggr_sig = AggregateSignature::from_bytes(signature.as_bytes().as_slice())
-        .expect("Failed to create aggregate signature");
-    
-    let message_bytes: Vec<&[u8]> = messages.iter().map(|m| m.as_bytes()).rev().collect();
-    return aggr_sig.verify_multiple(&message_bytes, &[&aggr_pkey]);
+    let message_bytes_vec: Vec<&[u8]> = messages.iter().map(|x| x.as_bytes()).collect();
+    return bls_verify_multiple(&pubkeys[..], &message_bytes_vec[..], &signature).unwrap();
 }
 
-pub fn optional_fast_aggregate_verify(pubkeys: Vec<PublicKeyBytes>, message: H256, signature: SignatureBytes) -> bool {
+pub fn optional_fast_aggregate_verify(pubkeys: Vec<PublicKeyBytes>, message: H256, signature: &SignatureBytes) -> bool {
     // WIP: did this according to Phase 0 implementation of validate_indexed_attestation.
     // Really not sure if this is correct. Same for optional_aggregate_verify.
     if pubkeys.is_empty() {
         // WIP: should SignatureBytes::empty() be part of configuration??
-        return signature == SignatureBytes::empty();
+        return *signature == SignatureBytes::empty();
     }
     
     let mut aggr_pkey = AggregatePublicKey::new();
