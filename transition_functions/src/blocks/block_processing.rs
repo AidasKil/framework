@@ -4,11 +4,12 @@ use helper_functions::crypto::{bls_verify, hash, hash_tree_root, bls_aggregate_p
 use helper_functions::math::*;
 use helper_functions::misc::{
     compute_domain, compute_epoch_at_slot, compute_signing_root, compute_previous_slot,
-    get_randao_epoch_for_custody_period, get_custody_period_for_validator
+    get_randao_epoch_for_custody_period, get_custody_period_for_validator, compute_shard_from_committee_index
 };
 use helper_functions::predicates::{
     is_active_validator, is_slashable_attestation_data, is_slashable_validator,
-    is_valid_merkle_branch, validate_indexed_attestation, optional_fast_aggregate_verify
+    is_valid_merkle_branch, validate_indexed_attestation, optional_fast_aggregate_verify,
+    is_on_time_attestation, is_winning_attestation
 };
 use std::collections::BTreeSet;
 use std::convert::TryInto;
@@ -19,9 +20,11 @@ use types::{
     beacon_state::*,
     config::{Config, MainnetConfig},
     types::VoluntaryExit,
+    beacon_chain_types::{ShardTransition, Root}
 };
+use ssz_types::{VariableList, FixedVector};
 use types::custody_game_types::{CustodyKeyReveal, EarlyDerivedSecretReveal, SignedCustodySlashing};
-use types::primitives::{ValidatorIndex, Epoch, PublicKeyBytes, H256};
+use types::primitives::{ValidatorIndex, Epoch, PublicKeyBytes, H256, CommitteeIndex};
 use crate::rewards_and_penalties::*;
 use std::thread::current;
 use crate::rewards_and_penalties::rewards_and_penalties::StakeholderBlock;
@@ -301,6 +304,69 @@ fn process_custody_game_operations<T: Config>(state: &mut BeaconState<T>, body: 
     }
 }
 
+fn process_shard_transitions<C: Config>(
+    state: &mut BeaconState<C>,
+    shard_transitions: &FixedVector<ShardTransition<C>, C::MaxShards>,
+    attestations: &VariableList<Attestation<C>, C::MaxAttestations>
+) {
+    // Process crosslinks
+    process_crosslinks(state, shard_transitions, attestations);
+    // Verify the empty proposal shard states
+    assert!(verify_empty_shard_transition(state, shard_transitions));
+    }
+
+fn verify_empty_shard_transition<C: Config>(
+    state: &BeaconState<C>,
+    shard_transitions: &FixedVector<ShardTransition<C>, C::MaxShards>
+) -> bool {
+    // Verify that a `shard_transition` in a block is empty if an attestation was not processed for it.
+    for shard in 0..get_active_shard_count(state) as usize {
+        if state.shard_states[shard].slot != compute_previous_slot(state.slot)
+            && shard_transitions[shard] != ShardTransition::default() {
+                return false;
+        }
+    }
+    return true;
+}
+
+fn process_crosslinks<C: Config>(
+    state: &mut BeaconState<C>,
+    shard_transitions: &FixedVector<ShardTransition<C>, C::MaxShards>,
+    attestations: &VariableList<Attestation<C>, C::MaxAttestations>
+) {
+    let on_time_attestation_slot = compute_previous_slot(state.slot);
+    let committee_count = get_committee_count_at_slot(state, on_time_attestation_slot).unwrap();
+    for committee_index in 0..committee_count {
+        // All attestations in the block for this committee/shard and current slot
+        let mut shard_attestations:Vec<&Attestation<C>> = Vec::new();
+        
+        for attestation in attestations.iter() {
+            if is_on_time_attestation(state, attestation) && attestation.data.index == committee_index {
+                shard_attestations.push(attestation);
+            } 
+        }
+        let shard = compute_shard_from_committee_index(state, committee_index, on_time_attestation_slot) as usize;
+        let winning_root = process_crosslink_for_shard(state, committee_index, &shard_transitions[shard], shard_attestations);
+        if winning_root != Root::default() {
+            // Mark relevant pending attestations as creating a successful crosslink
+            for pending_attestation in state.current_epoch_attestations.iter_mut() {
+                if is_winning_attestation(state.slot, pending_attestation, committee_index, winning_root) {
+                    pending_attestation.crosslink_success = true;
+                }
+            }
+        }
+    }
+}
+
+fn process_crosslink_for_shard<C: Config>(state: &BeaconState<C>,
+    committee_index: CommitteeIndex,
+    shard_transition: &ShardTransition<C>,
+    attestations: Vec<&Attestation<C>>
+) -> Root {
+    // WIP: implement
+    return Root::default();
+}
+
 fn process_block_header<T: Config>(state: &mut BeaconState<T>, block: &BeaconBlock<T>) {
     //# Verify that the slots match
     assert!(block.slot == state.slot);
@@ -538,6 +604,8 @@ fn process_operations<T: Config>(state: &mut BeaconState<T>, body: &BeaconBlockB
         process_voluntary_exit(state, voluntary_exit);
     }
     process_custody_game_operations(state, body);
+
+    process_shard_transitions(state, &body.shard_transitions, &body.attestations);
 }
 
 fn process_light_client_signatures<C: Config>(state: &mut BeaconState<C>, block_body: &BeaconBlockBody<C>) {

@@ -12,7 +12,7 @@ use types::{
     beacon_state::BeaconState,
     config::Config,
     helper_functions_types::Error,
-    primitives::{AggregateSignature, Epoch, H256, CommitteeIndex},
+    primitives::{AggregateSignature, Epoch, H256, CommitteeIndex, Slot},
     types::{AttestationData, IndexedAttestation, Validator, PendingAttestation, Attestation},
     beacon_chain_types::AttestationCustodyBitWrapper,
 };
@@ -152,14 +152,14 @@ pub fn is_valid_merkle_branch(
 }
 
 pub fn is_winning_attestation<C: Config>(
-    state: BeaconState<C>, 
-    attestation: PendingAttestation<C>, 
+    slot: Slot, 
+    attestation: &PendingAttestation<C>, 
     committee_index: CommitteeIndex,
     winning_root: H256
 ) -> bool {
     // Check if attestation helped contribute to the successful crosslink of
     // winning_root formed by committee_index committee at the current slot.
-    return attestation.data.slot == state.slot 
+    return attestation.data.slot == slot 
     && attestation.data.index == committee_index 
     && attestation.data.shard_transition_root == winning_root;
 }
